@@ -1,13 +1,16 @@
 const ui = {};
 const fileState = { root: "", path: "" };
 const THEME_STORAGE_KEY = "twitcast-theme";
+const HIDE_OFFLINE_LOGS_STORAGE_KEY = "twitcast-hide-offline-logs";
 const themeState = { value: "dark" };
+const logState = { lines: [], hideOffline: true };
 let botRestartPending = false;
 let toastTimer = null;
 
 window.addEventListener("DOMContentLoaded", () => {
     cacheElements();
     initTheme();
+    initLogFilters();
     bindEvents();
     boot().catch(handleError);
 });
@@ -43,6 +46,7 @@ function cacheElements() {
     ui.filesBody = document.getElementById("filesBody");
     ui.filePreview = document.getElementById("filePreview");
     ui.logsPanel = document.getElementById("logsPanel");
+    ui.hideOfflineLogsInput = document.getElementById("hideOfflineLogsInput");
 
     ui.themeToggleBtn = document.getElementById("themeToggleBtn");
     ui.refreshBtn = document.getElementById("refreshBtn");
@@ -71,6 +75,7 @@ function bindEvents() {
     ui.fileUpBtn.addEventListener("click", () => browseFiles(fileState.root, parentPath(fileState.path)).catch(handleError));
     ui.fileRefreshBtn.addEventListener("click", () => browseFiles(fileState.root, fileState.path).catch(handleError));
     ui.logsRefreshBtn.addEventListener("click", () => loadLogs().catch(handleError));
+    ui.hideOfflineLogsInput.addEventListener("change", handleOfflineLogFilterChange);
     ui.clearPreviewBtn.addEventListener("click", () => {
         ui.filePreview.textContent = "尚未選擇檔案。";
     });
@@ -112,6 +117,28 @@ function applyTheme(theme) {
     try {
         window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
     } catch {}
+}
+
+function initLogFilters() {
+    logState.hideOffline = readStoredHideOfflineLogs();
+    ui.hideOfflineLogsInput.checked = logState.hideOffline;
+}
+
+function readStoredHideOfflineLogs() {
+    try {
+        const stored = window.localStorage.getItem(HIDE_OFFLINE_LOGS_STORAGE_KEY);
+        return stored !== "0";
+    } catch {
+        return true;
+    }
+}
+
+function handleOfflineLogFilterChange() {
+    logState.hideOffline = ui.hideOfflineLogsInput.checked;
+    try {
+        window.localStorage.setItem(HIDE_OFFLINE_LOGS_STORAGE_KEY, logState.hideOffline ? "1" : "0");
+    } catch {}
+    renderLogs();
 }
 
 async function boot() {
@@ -166,9 +193,32 @@ async function loadSettings() {
 
 async function loadLogs() {
     const data = await api("/api/logs?limit=250");
-    const lines = data.lines || [];
-    ui.logsPanel.textContent = lines.length ? lines.join("\n") : "目前沒有可顯示的日誌。";
+    logState.lines = Array.isArray(data.lines) ? data.lines : [];
+    renderLogs();
+}
+
+// 直播未开播时会周期性报 offline，这类轮询噪音默认隐藏，避免淹没真正错误。
+function renderLogs() {
+    const lines = filterLogLines(logState.lines);
+    if (!logState.lines.length) {
+        ui.logsPanel.textContent = "目前沒有可顯示的日誌。";
+    } else if (!lines.length) {
+        ui.logsPanel.textContent = "目前的日誌都被「隱藏離線輪詢」過濾掉了。";
+    } else {
+        ui.logsPanel.textContent = lines.join("\n");
+    }
     ui.logsPanel.scrollTop = ui.logsPanel.scrollHeight;
+}
+
+function filterLogLines(lines) {
+    if (!logState.hideOffline) {
+        return lines;
+    }
+    return lines.filter((line) => !isOfflinePollingLog(line));
+}
+
+function isOfflinePollingLog(line) {
+    return line.includes("Error fetching stream URL for streamer [") && line.includes("live stream is offline");
 }
 
 function renderStatus(data) {

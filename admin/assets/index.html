@@ -202,7 +202,13 @@
             <article class="panel">
                 <div class="section-head">
                     <h2>即時日誌</h2>
-                    <button id="logsRefreshBtn" class="ghost">重新整理</button>
+                    <div class="inline-actions log-actions">
+                        <label class="checkbox compact-toggle">
+                            <input id="hideOfflineLogsInput" type="checkbox" checked>
+                            <span>隱藏離線輪詢</span>
+                        </label>
+                        <button id="logsRefreshBtn" class="ghost">重新整理</button>
+                    </div>
                 </div>
                 <pre id="logsPanel" class="console">載入中...</pre>
             </article>
