@@ -1,8 +1,46 @@
 :root {
+    color-scheme: dark;
+    --bg: #071116;
+    --bg-mid: #10232b;
+    --bg-deep: #020609;
+    --panel: rgba(9, 24, 31, 0.86);
+    --panel-strong: rgba(12, 31, 39, 0.94);
+    --panel-soft: rgba(6, 17, 22, 0.78);
+    --ink: #edf8f4;
+    --muted: #93a9b1;
+    --line: rgba(171, 216, 212, 0.14);
+    --accent: #4fd1c5;
+    --accent-strong: #7be7dd;
+    --warn: #f2c66a;
+    --danger: #ff7c70;
+    --ok: #5fd39a;
+    --hero-start: rgba(10, 28, 36, 0.96);
+    --hero-end: rgba(6, 18, 24, 0.88);
+    --hero-stripe: rgba(79, 209, 197, 0.08);
+    --panel-border: rgba(171, 216, 212, 0.12);
+    --input-bg: rgba(4, 15, 20, 0.94);
+    --input-border: rgba(171, 216, 212, 0.14);
+    --input-focus: rgba(79, 209, 197, 0.24);
+    --metric-bg: rgba(11, 30, 37, 0.96);
+    --table-bg: rgba(4, 15, 20, 0.82);
+    --path-bg: rgba(255, 255, 255, 0.06);
+    --ghost-bg: rgba(79, 209, 197, 0.14);
+    --ghost-hover: rgba(79, 209, 197, 0.22);
+    --record-bg: rgba(8, 20, 26, 0.84);
+    --console-bg: #081318;
+    --console-fg: #daf7f0;
+    --toast-bg: rgba(7, 17, 23, 0.96);
+    --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+}
+
+html[data-theme="light"] {
+    color-scheme: light;
     --bg: #f3efe4;
+    --bg-mid: #ece6d5;
     --bg-deep: #d9d2bf;
     --panel: rgba(255, 252, 245, 0.9);
     --panel-strong: #fffdf7;
+    --panel-soft: rgba(255, 255, 255, 0.72);
     --ink: #1f2933;
     --muted: #5f6c78;
     --line: rgba(31, 41, 51, 0.12);
@@ -11,6 +49,22 @@
     --warn: #c97a11;
     --danger: #b42318;
     --ok: #1d6f42;
+    --hero-start: rgba(255, 253, 247, 0.96);
+    --hero-end: rgba(250, 243, 227, 0.88);
+    --hero-stripe: rgba(15, 118, 110, 0.03);
+    --panel-border: rgba(255, 255, 255, 0.55);
+    --input-bg: rgba(255, 255, 255, 0.92);
+    --input-border: rgba(31, 41, 51, 0.14);
+    --input-focus: rgba(15, 118, 110, 0.14);
+    --metric-bg: #fffdf7;
+    --table-bg: rgba(255, 255, 255, 0.68);
+    --path-bg: rgba(31, 41, 51, 0.06);
+    --ghost-bg: rgba(15, 118, 110, 0.1);
+    --ghost-hover: rgba(15, 118, 110, 0.18);
+    --record-bg: rgba(255, 255, 255, 0.72);
+    --console-bg: #102025;
+    --console-fg: #daf7f0;
+    --toast-bg: rgba(16, 32, 37, 0.92);
     --shadow: 0 24px 60px rgba(50, 44, 22, 0.12);
 }
 
@@ -24,9 +78,10 @@ body {
     color: var(--ink);
     font-family: "Noto Sans TC", "Aptos", "Trebuchet MS", sans-serif;
     background:
-        radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 28%),
-        radial-gradient(circle at top right, rgba(201, 122, 17, 0.12), transparent 26%),
-        linear-gradient(145deg, var(--bg), #ece6d5 45%, var(--bg-deep));
+        radial-gradient(circle at top left, rgba(79, 209, 197, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(242, 198, 106, 0.12), transparent 24%),
+        linear-gradient(145deg, var(--bg), var(--bg-mid) 42%, var(--bg-deep));
+    transition: background 180ms ease, color 180ms ease;
 }
 
 .shell {
@@ -41,11 +96,11 @@ body {
     gap: 18px;
     margin-bottom: 18px;
     padding: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.55);
+    border: 1px solid var(--panel-border);
     border-radius: 28px;
     background:
-        linear-gradient(140deg, rgba(255, 253, 247, 0.96), rgba(250, 243, 227, 0.88)),
-        repeating-linear-gradient(90deg, rgba(15, 118, 110, 0.03), rgba(15, 118, 110, 0.03) 1px, transparent 1px, transparent 12px);
+        linear-gradient(140deg, var(--hero-start), var(--hero-end)),
+        repeating-linear-gradient(90deg, var(--hero-stripe), var(--hero-stripe) 1px, transparent 1px, transparent 12px);
     box-shadow: var(--shadow);
 }
 
@@ -98,12 +153,13 @@ h1 {
 }
 
 .panel {
-    border: 1px solid rgba(255, 255, 255, 0.55);
+    border: 1px solid var(--panel-border);
     border-radius: 24px;
     padding: 20px;
     background: var(--panel);
     box-shadow: var(--shadow);
     backdrop-filter: blur(8px);
+    transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .section-head {
@@ -133,7 +189,7 @@ h1 {
 .metric {
     padding: 14px;
     border-radius: 18px;
-    background: var(--panel-strong);
+    background: var(--metric-bg);
     border: 1px solid var(--line);
 }
 
@@ -169,7 +225,7 @@ h1 {
     padding: 12px 14px;
     border-radius: 16px;
     border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--record-bg);
 }
 
 .diagnostic.info {
@@ -226,10 +282,18 @@ select {
     width: 100%;
     min-height: 44px;
     padding: 10px 12px;
-    border: 1px solid rgba(31, 41, 51, 0.14);
+    border: 1px solid var(--input-border);
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.92);
+    background: var(--input-bg);
     color: var(--ink);
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--input-focus);
 }
 
 .checkbox {
@@ -268,22 +332,30 @@ button:disabled {
 }
 
 button.ghost {
-    background: rgba(15, 118, 110, 0.1);
+    background: var(--ghost-bg);
     color: var(--accent-strong);
 }
 
 button.ghost:hover {
-    background: rgba(15, 118, 110, 0.18);
+    background: var(--ghost-hover);
 }
 
 button.danger {
     background: var(--danger);
 }
 
+button.danger:hover {
+    background: color-mix(in srgb, var(--danger) 88%, black);
+}
+
 button.small {
     min-height: 34px;
     padding: 6px 10px;
     border-radius: 10px;
+}
+
+.theme-toggle {
+    min-width: 124px;
 }
 
 .inline-actions {
@@ -334,7 +406,7 @@ button.small {
     min-height: 44px;
     padding: 10px 14px;
     border-radius: 999px;
-    background: rgba(31, 41, 51, 0.06);
+    background: var(--path-bg);
     color: var(--muted);
     font-family: "Cascadia Code", "Consolas", monospace;
 }
@@ -343,7 +415,7 @@ button.small {
     overflow-x: auto;
     border-radius: 18px;
     border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.68);
+    background: var(--table-bg);
 }
 
 table {
@@ -368,6 +440,10 @@ th {
 
 tbody tr:last-child td {
     border-bottom: none;
+}
+
+tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
 }
 
 td.actions-cell {
@@ -399,8 +475,8 @@ td.actions-cell {
     padding: 16px;
     overflow: auto;
     border-radius: 18px;
-    background: #102025;
-    color: #daf7f0;
+    background: var(--console-bg);
+    color: var(--console-fg);
     border: 1px solid rgba(255, 255, 255, 0.08);
     font-family: "Cascadia Code", "Consolas", monospace;
     line-height: 1.55;
@@ -415,13 +491,17 @@ td.actions-cell {
     max-width: min(440px, calc(100vw - 32px));
     padding: 14px 18px;
     border-radius: 16px;
-    background: rgba(16, 32, 37, 0.92);
+    background: var(--toast-bg);
     color: white;
     box-shadow: 0 18px 45px rgba(16, 32, 37, 0.3);
     opacity: 0;
     pointer-events: none;
     transform: translateY(10px);
     transition: opacity 160ms ease, transform 160ms ease;
+}
+
+html[data-theme="light"] tbody tr:hover td {
+    background: rgba(15, 118, 110, 0.04);
 }
 
 .toast.show {

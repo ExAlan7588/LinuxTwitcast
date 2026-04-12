@@ -1,9 +1,12 @@
 const ui = {};
 const fileState = { root: "", path: "" };
+const THEME_STORAGE_KEY = "twitcast-theme";
+const themeState = { value: "dark" };
 let toastTimer = null;
 
 window.addEventListener("DOMContentLoaded", () => {
     cacheElements();
+    initTheme();
     bindEvents();
     boot().catch(handleError);
 });
@@ -40,6 +43,7 @@ function cacheElements() {
     ui.filePreview = document.getElementById("filePreview");
     ui.logsPanel = document.getElementById("logsPanel");
 
+    ui.themeToggleBtn = document.getElementById("themeToggleBtn");
     ui.refreshBtn = document.getElementById("refreshBtn");
     ui.saveSettingsBtn = document.getElementById("saveSettingsBtn");
     ui.startRecorderBtn = document.getElementById("startRecorderBtn");
@@ -53,6 +57,7 @@ function cacheElements() {
 }
 
 function bindEvents() {
+    ui.themeToggleBtn.addEventListener("click", toggleTheme);
     ui.refreshBtn.addEventListener("click", () => refreshAll().catch(handleError));
     ui.saveSettingsBtn.addEventListener("click", () => saveSettings().catch(handleError));
     ui.startRecorderBtn.addEventListener("click", () => controlRecorder("start").catch(handleError));
@@ -66,6 +71,44 @@ function bindEvents() {
     ui.clearPreviewBtn.addEventListener("click", () => {
         ui.filePreview.textContent = "尚未選擇檔案。";
     });
+}
+
+// 主題切換要在頁面載入初期就同步，避免先閃成錯誤配色。
+function initTheme() {
+    applyTheme(readStoredTheme());
+}
+
+function toggleTheme() {
+    applyTheme(themeState.value === "dark" ? "light" : "dark");
+}
+
+function readStoredTheme() {
+    try {
+        return normalizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+    } catch {
+        return "dark";
+    }
+}
+
+function normalizeTheme(theme) {
+    return theme === "light" ? "light" : "dark";
+}
+
+function applyTheme(theme) {
+    const nextTheme = normalizeTheme(theme);
+    themeState.value = nextTheme;
+    document.documentElement.dataset.theme = nextTheme;
+
+    if (ui.themeToggleBtn) {
+        const isDark = nextTheme === "dark";
+        ui.themeToggleBtn.textContent = isDark ? "切到淺色" : "切到黑暗";
+        ui.themeToggleBtn.setAttribute("aria-label", isDark ? "切換到淺色模式" : "切換到黑暗模式");
+        ui.themeToggleBtn.setAttribute("aria-pressed", String(isDark));
+    }
+
+    try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch {}
 }
 
 async function boot() {
