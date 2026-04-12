@@ -1,30 +1,88 @@
 package twitcasting
 
 import (
+	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	"github.com/sacOO7/gowebsocket"
 
 	"github.com/jzhang046/croned-twitcasting-recorder/record"
 )
 
+const (
+	wsReconnectGracePeriod   = 20 * time.Second
+	wsReconnectRetryInterval = 2 * time.Second
+)
+
 func RecordWS(recordCtx record.RecordContext, sinkChan chan<- []byte) {
-	socket := gowebsocket.New(recordCtx.GetStreamUrl())
+	defer close(sinkChan)
+
 	streamer := recordCtx.GetStreamer()
+	streamURL := recordCtx.GetStreamUrl()
+
+	for {
+		if recordCtx.Err() != nil {
+			return
+		}
+
+		socket, disconnectedCh := newRecordingSocket(recordCtx, streamURL, sinkChan)
+		socket.Connect()
+
+		select {
+		case <-recordCtx.Done():
+			if socket.IsConnected {
+				socket.Close()
+			}
+			return
+		case err := <-disconnectedCh:
+			if recordCtx.Err() != nil {
+				return
+			}
+
+			// TwitCasting 的 WebSocket 會偶發短暫斷線；先嘗試重抓 stream URL，
+			// 避免把同一場直播切成多段並重複發 Discord/Telegram 通知。
+			nextURL, reconnectErr := waitForReconnectURL(recordCtx, streamer, err)
+			if reconnectErr != nil {
+				log.Printf("Stream [%s] reconnect grace period expired: %v\n", streamer, reconnectErr)
+				recordCtx.Cancel()
+				return
+			}
+			streamURL = nextURL
+		}
+	}
+}
+
+func newRecordingSocket(recordCtx record.RecordContext, streamURL string, sinkChan chan<- []byte) (*gowebsocket.Socket, <-chan error) {
+	socket := gowebsocket.New(streamURL)
+	streamer := recordCtx.GetStreamer()
+	disconnectedCh := make(chan error, 1)
+	var disconnectOnce sync.Once
 
 	socket.ConnectionOptions = gowebsocket.ConnectionOptions{
-		// Proxy: gowebsocket.BuildProxy("http://example.com"),
 		UseSSL:         true,
 		UseCompression: false,
-		// Subprotocols:   []string{"chat", "superchat"},
 	}
 
 	socket.RequestHeader.Set("Origin", baseDomain)
 	socket.RequestHeader.Set("User-Agent", userAgent)
 
+	signalDisconnect := func(err error) {
+		if err == nil {
+			err = fmt.Errorf("websocket disconnected")
+		}
+		disconnectOnce.Do(func() {
+			select {
+			case disconnectedCh <- err:
+			default:
+			}
+		})
+	}
+
 	socket.OnConnectError = func(err error, socket gowebsocket.Socket) {
 		log.Println("Error connecting to stream URL: ", err)
-		recordCtx.Cancel()
+		signalDisconnect(err)
 	}
 	socket.OnConnected = func(socket gowebsocket.Socket) {
 		log.Printf("Connected to live stream for [%s], recording start \n", streamer)
@@ -32,23 +90,46 @@ func RecordWS(recordCtx record.RecordContext, sinkChan chan<- []byte) {
 	socket.OnTextMessage = func(message string, socket gowebsocket.Socket) {
 		log.Println("Received message", message)
 	}
-
 	socket.OnBinaryMessage = func(data []byte, socket gowebsocket.Socket) {
-		sinkChan <- data
+		select {
+		case <-recordCtx.Done():
+			return
+		case sinkChan <- data:
+		}
 	}
-
 	socket.OnDisconnected = func(err error, socket gowebsocket.Socket) {
 		log.Printf("Disconnected from live stream of [%s] \n", streamer)
-		recordCtx.Cancel()
+		signalDisconnect(err)
 	}
 
-	socket.Connect()
+	return &socket, disconnectedCh
+}
 
-	// Waiting for context to finish
-	<-recordCtx.Done()
+func waitForReconnectURL(recordCtx record.RecordContext, streamer string, disconnectErr error) (string, error) {
+	deadline := time.Now().Add(wsReconnectGracePeriod)
+	log.Printf("Stream [%s] disconnected, waiting up to %s for reconnect: %v\n", streamer, wsReconnectGracePeriod, disconnectErr)
 
-	if socket.IsConnected {
-		socket.Close()
+	for {
+		if recordCtx.Err() != nil {
+			return "", recordCtx.Err()
+		}
+
+		streamURL, _, _, err := GetWSStreamUrl(streamer)
+		if err == nil {
+			log.Printf("Stream [%s] reconnected within grace period\n", streamer)
+			return streamURL, nil
+		}
+
+		if time.Now().After(deadline) {
+			return "", err
+		}
+
+		timer := time.NewTimer(wsReconnectRetryInterval)
+		select {
+		case <-recordCtx.Done():
+			timer.Stop()
+			return "", recordCtx.Err()
+		case <-timer.C:
+		}
 	}
-	close(sinkChan)
 }
