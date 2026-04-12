@@ -37,9 +37,10 @@ type Options struct {
 }
 
 type Server struct {
-	options    Options
-	manager    *service.Manager
-	httpServer *http.Server
+	options          Options
+	manager          *service.Manager
+	restartRequested chan<- struct{}
+	httpServer       *http.Server
 }
 
 type RuntimeInfo struct {
@@ -75,10 +76,11 @@ type FileListResponse struct {
 	Entries []FileEntry `json:"entries"`
 }
 
-func NewServer(options Options, manager *service.Manager) *Server {
+func NewServer(options Options, manager *service.Manager, restartRequested chan<- struct{}) *Server {
 	server := &Server{
-		options: options,
-		manager: manager,
+		options:          options,
+		manager:          manager,
+		restartRequested: restartRequested,
 	}
 
 	mux := http.NewServeMux()
@@ -89,6 +91,7 @@ func NewServer(options Options, manager *service.Manager) *Server {
 	mux.Handle("/api/recorder/start", server.withAuth(http.HandlerFunc(server.handleRecorderStart)))
 	mux.Handle("/api/recorder/stop", server.withAuth(http.HandlerFunc(server.handleRecorderStop)))
 	mux.Handle("/api/recorder/restart", server.withAuth(http.HandlerFunc(server.handleRecorderRestart)))
+	mux.Handle("/api/bot/restart", server.withAuth(http.HandlerFunc(server.handleBotRestart)))
 	mux.Handle("/api/logs", server.withAuth(http.HandlerFunc(server.handleLogs)))
 	mux.Handle("/api/files/roots", server.withAuth(http.HandlerFunc(server.handleFileRoots)))
 	mux.Handle("/api/files", server.withAuth(http.HandlerFunc(server.handleFiles)))
@@ -237,6 +240,29 @@ func (s *Server) handleRecorderRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, map[string]any{"status": s.manager.Status()})
+}
+
+func (s *Server) handleBotRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+	if s.restartRequested == nil {
+		s.writeError(w, http.StatusNotImplemented, errors.New("bot restart is not available"))
+		return
+	}
+
+	scheduled := false
+	select {
+	case s.restartRequested <- struct{}{}:
+		scheduled = true
+	default:
+	}
+
+	s.writeJSON(w, map[string]any{
+		"restarting": true,
+		"scheduled":  scheduled,
+	})
 }
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {

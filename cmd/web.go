@@ -47,12 +47,13 @@ func RecordWeb(args []string) {
 		}
 	}
 
+	restartRequested := make(chan struct{}, 1)
 	server := admin.NewServer(admin.Options{
 		Address:  *addr,
 		RootDir:  rootDir,
 		Username: *username,
 		Password: *password,
-	}, manager)
+	}, manager, restartRequested)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -63,17 +64,22 @@ func RecordWeb(args []string) {
 	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
+	restartAfterShutdown := false
 	select {
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalln("Web console stopped unexpectedly:", err)
 		}
 	case <-signalCtx.Done():
+	case <-restartRequested:
+		restartAfterShutdown = true
+		log.Println("Bot restart requested from web console")
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// 整個 bot 重啟要由主循環統一收斂：先停 listener、再停 recorder，最後才重啟進程。
 	if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Printf("Web console shutdown returned an error: %v\n", err)
 	}
@@ -87,6 +93,16 @@ func RecordWeb(args []string) {
 			log.Printf("Web console exited with error: %v\n", err)
 		}
 	default:
+	}
+
+	if restartAfterShutdown {
+		executable, err := os.Executable()
+		if err != nil {
+			log.Fatalln("Failed resolving executable for restart:", err)
+		}
+		if err := restartProcess(executable, os.Args[1:]); err != nil {
+			log.Fatalln("Failed restarting bot process:", err)
+		}
 	}
 }
 

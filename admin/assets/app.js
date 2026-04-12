@@ -2,6 +2,7 @@ const ui = {};
 const fileState = { root: "", path: "" };
 const THEME_STORAGE_KEY = "twitcast-theme";
 const themeState = { value: "dark" };
+let botRestartPending = false;
 let toastTimer = null;
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -49,6 +50,7 @@ function cacheElements() {
     ui.startRecorderBtn = document.getElementById("startRecorderBtn");
     ui.stopRecorderBtn = document.getElementById("stopRecorderBtn");
     ui.restartRecorderBtn = document.getElementById("restartRecorderBtn");
+    ui.restartBotBtn = document.getElementById("restartBotBtn");
     ui.addStreamerBtn = document.getElementById("addStreamerBtn");
     ui.fileRefreshBtn = document.getElementById("fileRefreshBtn");
     ui.logsRefreshBtn = document.getElementById("logsRefreshBtn");
@@ -63,6 +65,7 @@ function bindEvents() {
     ui.startRecorderBtn.addEventListener("click", () => controlRecorder("start").catch(handleError));
     ui.stopRecorderBtn.addEventListener("click", () => controlRecorder("stop").catch(handleError));
     ui.restartRecorderBtn.addEventListener("click", () => controlRecorder("restart").catch(handleError));
+    ui.restartBotBtn.addEventListener("click", () => restartBot().catch(handleError));
     ui.addStreamerBtn.addEventListener("click", addStreamerRow);
     ui.fileRootSelect.addEventListener("change", () => browseFiles(ui.fileRootSelect.value, "").catch(handleError));
     ui.fileUpBtn.addEventListener("click", () => browseFiles(fileState.root, parentPath(fileState.path)).catch(handleError));
@@ -368,6 +371,44 @@ async function controlRecorder(action) {
     await Promise.all([loadStatus(), loadLogs()]);
 }
 
+async function restartBot() {
+    if (!window.confirm("確定要重啟整個 Bot 嗎？這會短暫中斷目前的管理頁與錄影器。")) {
+        return;
+    }
+
+    botRestartPending = true;
+    ui.restartBotBtn.disabled = true;
+    await api("/api/bot/restart", { method: "POST" });
+    showToast("Bot 正在重啟，頁面會在幾秒後自動重新連線。");
+    waitForBotRecovery();
+}
+
+// Bot 重啟後 listener 會短暫斷線，這裡輪詢健康狀態，等它回來再自動刷新頁面。
+function waitForBotRecovery() {
+    const startedAt = Date.now();
+
+    const poll = async () => {
+        try {
+            const response = await fetch("/api/status", { cache: "no-store" });
+            if (response.ok || response.status === 401) {
+                window.location.reload();
+                return;
+            }
+        } catch {}
+
+        if (Date.now() - startedAt >= 60000) {
+            botRestartPending = false;
+            ui.restartBotBtn.disabled = false;
+            showToast("Bot 尚未在 60 秒內恢復，請檢查 web.log 或程序輸出。", true);
+            return;
+        }
+
+        window.setTimeout(poll, 2000);
+    };
+
+    window.setTimeout(poll, 2500);
+}
+
 function renderFileRoots(roots) {
     if (!Array.isArray(roots) || !roots.length) {
         ui.fileRootSelect.innerHTML = "";
@@ -532,6 +573,9 @@ function showToast(message, isError = false) {
 
 function handleError(error) {
     console.error(error);
+    if (botRestartPending) {
+        return;
+    }
     showToast(error.message || "發生未預期錯誤。", true);
 }
 
