@@ -1,0 +1,18 @@
+[Unit]
+Description=TwitCasting Recorder Web Console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=twitcast
+Group=twitcast
+WorkingDirectory=/opt/LinuxTwitcast
+Environment=TWITCAST_WEB_USERNAME=admin
+Environment=TWITCAST_WEB_PASSWORD=change-this-now
+ExecStart=/opt/LinuxTwitcast/twitcast_bot web --addr 127.0.0.1:8080 --auto-start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

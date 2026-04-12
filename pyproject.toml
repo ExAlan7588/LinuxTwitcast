@@ -1,0 +1,9 @@
+[project]
+name = "linuxtwitcast-launcher"
+version = "0.1.0"
+description = "uv-managed runtime for the Windows launcher used by LinuxTwitcast"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false

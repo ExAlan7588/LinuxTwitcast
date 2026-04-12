@@ -1,0 +1,29 @@
+bin/
+*.ts
+config.yaml
+discord.json
+telegram.json
+app.log
+.gocache/
+.gomodcache/
+twitcast_bot
+*.exe
+.venv/
+__pycache__/
+*.pyc
+*.go.[0-9]*
+Recordings/
+.codex-turbo-src/
+codex-turbo-install-staging/
+codex-turbo-install-staging-home/
+codex-turbo-src/
+LinuxTwitcast.7z
+config.json
+
+
+# macOS 
+.DS_Store
+._.DS_Store 
+
+# vim 
+*.swp

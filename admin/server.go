@@ -1,0 +1,674 @@
+package admin
+
+import (
+	"context"
+	"crypto/subtle"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/jzhang046/croned-twitcasting-recorder/applog"
+	"github.com/jzhang046/croned-twitcasting-recorder/config"
+	"github.com/jzhang046/croned-twitcasting-recorder/service"
+)
+
+//go:embed assets/*
+var assets embed.FS
+
+type Options struct {
+	Address  string
+	RootDir  string
+	Username string
+	Password string
+}
+
+type Server struct {
+	options    Options
+	manager    *service.Manager
+	httpServer *http.Server
+}
+
+type RuntimeInfo struct {
+	OS               string `json:"os"`
+	Arch             string `json:"arch"`
+	WorkingDirectory string `json:"working_directory"`
+	Executable       string `json:"executable"`
+	FFmpegPath       string `json:"ffmpeg_path,omitempty"`
+	ListenAddress    string `json:"listen_address"`
+	AuthEnabled      bool   `json:"auth_enabled"`
+}
+
+type Diagnostic struct {
+	Level   string `json:"level"`
+	Message string `json:"message"`
+}
+
+type FileEntry struct {
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Type         string `json:"type"`
+	Size         int64  `json:"size"`
+	ModifiedAt   string `json:"modified_at"`
+	Previewable  bool   `json:"previewable"`
+	Downloadable bool   `json:"downloadable"`
+	Deletable    bool   `json:"deletable"`
+}
+
+type FileListResponse struct {
+	Root    string      `json:"root"`
+	Path    string      `json:"path"`
+	Parent  string      `json:"parent,omitempty"`
+	Entries []FileEntry `json:"entries"`
+}
+
+func NewServer(options Options, manager *service.Manager) *Server {
+	server := &Server{
+		options: options,
+		manager: manager,
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/", server.withAuth(http.HandlerFunc(server.handleIndex)))
+	mux.Handle("/assets/", server.withAuth(server.assetHandler()))
+	mux.Handle("/api/status", server.withAuth(http.HandlerFunc(server.handleStatus)))
+	mux.Handle("/api/settings", server.withAuth(http.HandlerFunc(server.handleSettings)))
+	mux.Handle("/api/recorder/start", server.withAuth(http.HandlerFunc(server.handleRecorderStart)))
+	mux.Handle("/api/recorder/stop", server.withAuth(http.HandlerFunc(server.handleRecorderStop)))
+	mux.Handle("/api/recorder/restart", server.withAuth(http.HandlerFunc(server.handleRecorderRestart)))
+	mux.Handle("/api/logs", server.withAuth(http.HandlerFunc(server.handleLogs)))
+	mux.Handle("/api/files/roots", server.withAuth(http.HandlerFunc(server.handleFileRoots)))
+	mux.Handle("/api/files", server.withAuth(http.HandlerFunc(server.handleFiles)))
+	mux.Handle("/api/files/content", server.withAuth(http.HandlerFunc(server.handleFileContent)))
+	mux.Handle("/api/files/download", server.withAuth(http.HandlerFunc(server.handleFileDownload)))
+	mux.Handle("/api/files/delete", server.withAuth(http.HandlerFunc(server.handleFileDelete)))
+
+	server.httpServer = &http.Server{
+		Addr:    options.Address,
+		Handler: mux,
+	}
+
+	return server
+}
+
+func (s *Server) ListenAndServe() error {
+	return s.httpServer.ListenAndServe()
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	content, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(content)
+}
+
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	settings, err := LoadSettings()
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	executable, _ := os.Executable()
+	ffmpegPath, _ := exec.LookPath("ffmpeg")
+	status := s.manager.Status()
+
+	s.writeJSON(w, map[string]interface{}{
+		"recorder": status,
+		"runtime": RuntimeInfo{
+			OS:               runtime.GOOS,
+			Arch:             runtime.GOARCH,
+			WorkingDirectory: s.options.RootDir,
+			Executable:       executable,
+			FFmpegPath:       ffmpegPath,
+			ListenAddress:    s.options.Address,
+			AuthEnabled:      s.options.Username != "",
+		},
+		"file_roots":    BuildFileRoots(s.options.RootDir, settings),
+		"diagnostics":   s.buildDiagnostics(settings, status, ffmpegPath),
+		"needs_restart": status.Running,
+	})
+}
+
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		settings, err := LoadSettings()
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		s.writeJSON(w, settings)
+	case http.MethodPut:
+		var settings Settings
+		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+			s.writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := SaveSettings(settings); err != nil {
+			s.writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		warning := ""
+		if err := applog.Configure(settings.App.EnableLog); err != nil {
+			warning = fmt.Sprintf("settings were saved, but app.log could not be opened: %v", err)
+		}
+		s.writeJSON(w, map[string]interface{}{
+			"saved":         true,
+			"needs_restart": s.manager.Status().Running,
+			"warning":       warning,
+		})
+	default:
+		s.methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleRecorderStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	if err := s.manager.Start(); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.writeJSON(w, map[string]any{"status": s.manager.Status()})
+}
+
+func (s *Server) handleRecorderStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := s.manager.Stop(ctx); err != nil {
+		s.writeError(w, http.StatusRequestTimeout, err)
+		return
+	}
+	s.writeJSON(w, map[string]any{"status": s.manager.Status()})
+}
+
+func (s *Server) handleRecorderRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := s.manager.Restart(ctx); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.writeJSON(w, map[string]any{"status": s.manager.Status()})
+}
+
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 200, 500)
+	s.writeJSON(w, map[string]any{
+		"lines": applog.RecentLines(limit),
+	})
+}
+
+func (s *Server) handleFileRoots(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	settings, err := LoadSettings()
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.writeJSON(w, BuildFileRoots(s.options.RootDir, settings))
+}
+
+func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	rootDir, targetDir, relativePath, err := s.resolvePath(r.URL.Query().Get("root"), r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	info, err := os.Stat(targetDir)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if !info.IsDir() {
+		s.writeError(w, http.StatusBadRequest, errors.New("target path is not a directory"))
+		return
+	}
+
+	dirEntries, err := os.ReadDir(targetDir)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	sort.Slice(dirEntries, func(i, j int) bool {
+		leftDir := dirEntries[i].IsDir()
+		rightDir := dirEntries[j].IsDir()
+		if leftDir != rightDir {
+			return leftDir
+		}
+		return strings.ToLower(dirEntries[i].Name()) < strings.ToLower(dirEntries[j].Name())
+	})
+
+	entries := make([]FileEntry, 0, len(dirEntries))
+	for _, entry := range dirEntries {
+		fullPath := filepath.Join(targetDir, entry.Name())
+		fileInfo, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		kind := "file"
+		previewable := false
+		downloadable := true
+		deletable := true
+		if entry.Type()&os.ModeSymlink != 0 {
+			kind = "symlink"
+			downloadable = false
+			deletable = false
+		} else if entry.IsDir() {
+			kind = "dir"
+			downloadable = false
+		} else {
+			previewable = isPreviewableTextFile(fullPath, fileInfo.Size())
+		}
+
+		relEntryPath, _ := filepath.Rel(rootDir, fullPath)
+		entries = append(entries, FileEntry{
+			Name:         entry.Name(),
+			Path:         filepath.ToSlash(relEntryPath),
+			Type:         kind,
+			Size:         fileInfo.Size(),
+			ModifiedAt:   fileInfo.ModTime().Format(time.RFC3339),
+			Previewable:  previewable,
+			Downloadable: downloadable,
+			Deletable:    deletable,
+		})
+	}
+
+	parent := ""
+	if relativePath != "" {
+		parent = filepath.ToSlash(filepath.Dir(relativePath))
+		if parent == "." {
+			parent = ""
+		}
+	}
+
+	s.writeJSON(w, FileListResponse{
+		Root:    rootDir,
+		Path:    filepath.ToSlash(relativePath),
+		Parent:  parent,
+		Entries: entries,
+	})
+}
+
+func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	_, targetFile, _, err := s.resolvePath(r.URL.Query().Get("root"), r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	info, err := os.Lstat(targetFile)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		s.writeError(w, http.StatusBadRequest, errors.New("symlink preview is not supported"))
+		return
+	}
+	if info.IsDir() {
+		s.writeError(w, http.StatusBadRequest, errors.New("directory preview is not supported"))
+		return
+	}
+
+	content, truncated, err := readTextPreview(targetFile, 64*1024)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"path":      filepath.ToSlash(r.URL.Query().Get("path")),
+		"content":   content,
+		"truncated": truncated,
+	})
+}
+
+func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	_, targetFile, _, err := s.resolvePath(r.URL.Query().Get("root"), r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	info, err := os.Lstat(targetFile)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		s.writeError(w, http.StatusBadRequest, errors.New("symlink download is not supported"))
+		return
+	}
+	if info.IsDir() {
+		s.writeError(w, http.StatusBadRequest, errors.New("directory download is not supported"))
+		return
+	}
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(targetFile)))
+	http.ServeFile(w, r, targetFile)
+}
+
+func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		Root string `json:"root"`
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	_, targetPath, _, err := s.resolvePath(req.Root, req.Path)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	info, err := os.Lstat(targetPath)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		s.writeError(w, http.StatusBadRequest, errors.New("symlink deletion is not supported"))
+		return
+	}
+
+	if err := os.Remove(targetPath); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{"deleted": true})
+}
+
+func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, string, string, error) {
+	settings, err := LoadSettings()
+	if err != nil {
+		return "", "", "", err
+	}
+
+	allowedRoots := BuildFileRoots(s.options.RootDir, settings)
+	rootDir := filepath.Clean(strings.TrimSpace(requestedRoot))
+	if rootDir == "" {
+		rootDir = filepath.Clean(s.options.RootDir)
+	}
+
+	allowed := false
+	for _, root := range allowedRoots {
+		if filepath.Clean(root.Root) == rootDir {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return "", "", "", errors.New("unknown file root")
+	}
+
+	relativePath := filepath.Clean(filepath.FromSlash(strings.TrimSpace(requestedPath)))
+	if relativePath == "." {
+		relativePath = ""
+	}
+
+	targetPath := filepath.Join(rootDir, relativePath)
+	rootAbs, err := filepath.Abs(rootDir)
+	if err != nil {
+		return "", "", "", err
+	}
+	targetAbs, err := filepath.Abs(targetPath)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	if !pathWithinRoot(rootAbs, targetAbs) {
+		return "", "", "", errors.New("path escapes the allowed root")
+	}
+
+	return rootAbs, targetAbs, relativePath, nil
+}
+
+func (s *Server) buildDiagnostics(settings Settings, status service.Status, ffmpegPath string) []Diagnostic {
+	diagnostics := []Diagnostic{}
+	add := func(level, message string) {
+		diagnostics = append(diagnostics, Diagnostic{Level: level, Message: message})
+	}
+
+	if _, err := os.Stat(filepath.Join(s.options.RootDir, "launcher.py")); err == nil {
+		add("warn", "launcher.py uses Windows console APIs and should not be used on Ubuntu. Start the Go binary in web mode instead.")
+	}
+	if _, err := os.Stat(filepath.Join(s.options.RootDir, "croned-twitcasting-recorder.exe")); err == nil {
+		add("warn", "The checked-in .exe is Windows-only. Build or copy a Linux binary for the VPS.")
+	}
+	if config.EnabledStreamers(&settings.App) == 0 {
+		add("warn", "No enabled streamers are configured. The recorder cannot start until at least one streamer is enabled.")
+	}
+	if settings.Telegram.Enabled && settings.Telegram.ConvertToM4A && ffmpegPath == "" {
+		add("error", "Telegram audio extraction is enabled, but ffmpeg is not available in PATH.")
+	}
+	if settings.Telegram.Enabled && strings.Contains(strings.TrimSpace(settings.Telegram.ApiEndpoint), "127.0.0.1:8081") {
+		add("warn", "Telegram uploads are pointed at a local Bot API endpoint. Make sure that service also runs on the VPS, or switch back to https://api.telegram.org.")
+	}
+	if isPublicListen(s.options.Address) && s.options.Username == "" {
+		add("error", "The web console is exposed on a non-loopback address without built-in authentication.")
+	}
+	if runtime.GOOS != "linux" {
+		add("info", "This code is currently running on a non-Linux machine. A final smoke test on Ubuntu 24.04 LTS is still recommended.")
+	}
+	if status.Running && status.ScheduledJobs == 0 {
+		add("warn", "The recorder is running, but no schedules are currently active.")
+	}
+	add("info", "Ubuntu 24.04 LTS is the current Ubuntu 24 LTS release. If you meant Ubuntu 24.02, use 24.04 instead.")
+
+	return diagnostics
+}
+
+func (s *Server) withAuth(next http.Handler) http.Handler {
+	if s.options.Username == "" {
+		return next
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok ||
+			subtle.ConstantTimeCompare([]byte(username), []byte(s.options.Username)) != 1 ||
+			subtle.ConstantTimeCompare([]byte(password), []byte(s.options.Password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Twitcast Admin"`)
+			s.writeError(w, http.StatusUnauthorized, errors.New("authentication required"))
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) assetHandler() http.Handler {
+	assetFS, err := fs.Sub(assets, "assets")
+	if err != nil {
+		return http.NotFoundHandler()
+	}
+	return http.StripPrefix("/assets/", http.FileServer(http.FS(assetFS)))
+}
+
+func (s *Server) writeJSON(w http.ResponseWriter, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(payload)
+}
+
+func (s *Server) writeError(w http.ResponseWriter, status int, err error) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	s.writeJSON(w, map[string]string{"error": err.Error()})
+}
+
+func (s *Server) methodNotAllowed(w http.ResponseWriter) {
+	s.writeError(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+}
+
+func parsePositiveInt(raw string, fallback int, max int) int {
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+func pathWithinRoot(root, target string) bool {
+	relative, err := filepath.Rel(root, target)
+	if err != nil {
+		return false
+	}
+	return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator)))
+}
+
+func readTextPreview(path string, limit int64) (string, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false, err
+	}
+	defer file.Close()
+
+	reader := io.LimitReader(file, limit+1)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", false, err
+	}
+
+	truncated := int64(len(data)) > limit
+	if truncated {
+		data = data[:limit]
+	}
+	if !utf8.Valid(data) || bytesContainNull(data) {
+		return "", false, errors.New("binary file preview is not supported")
+	}
+
+	return string(data), truncated, nil
+}
+
+func isPreviewableTextFile(path string, size int64) bool {
+	if size > 512*1024 {
+		return false
+	}
+
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".txt", ".log", ".json", ".md", ".yaml", ".yml", ".service", ".conf", ".ini", ".py", ".go", ".js", ".css", ".html", ".sh":
+		return true
+	default:
+		return false
+	}
+}
+
+func bytesContainNull(data []byte) bool {
+	for _, value := range data {
+		if value == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func isPublicListen(addr string) bool {
+	host := strings.TrimSpace(addr)
+	if parsedHost, _, err := net.SplitHostPort(addr); err == nil {
+		host = parsedHost
+	}
+
+	switch host {
+	case "", "0.0.0.0", "::":
+		return true
+	case "127.0.0.1", "localhost", "::1":
+		return false
+	default:
+		return true
+	}
+}

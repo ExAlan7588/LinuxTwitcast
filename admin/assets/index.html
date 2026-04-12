@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TwitCasting VPS 控制台</title>
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+    <div class="shell">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">Headless Linux Control Room</p>
+                <h1>TwitCasting 錄影控制台</h1>
+                <p class="lede">把原本依賴 Windows GUI 的操作，改成在 Ubuntu VPS 上也能直接管理的單一網頁。</p>
+            </div>
+            <div class="actions">
+                <button id="refreshBtn" class="ghost">重新整理</button>
+                <button id="saveSettingsBtn">儲存設定</button>
+                <button id="startRecorderBtn">啟動錄影器</button>
+                <button id="stopRecorderBtn" class="danger">停止錄影器</button>
+                <button id="restartRecorderBtn" class="ghost">重新啟動</button>
+            </div>
+        </header>
+
+        <section class="grid grid-top">
+            <article class="panel">
+                <div class="section-head">
+                    <h2>服務狀態</h2>
+                    <span id="statusBadge" class="badge muted">載入中</span>
+                </div>
+                <div id="recorderSummary" class="summary-grid"></div>
+                <div class="subsection">
+                    <h3>進行中的錄影</h3>
+                    <div id="activeRecordings" class="stack muted-text">目前沒有活動中的錄影。</div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="section-head">
+                    <h2>系統資訊</h2>
+                </div>
+                <dl id="runtimeInfo" class="runtime-list"></dl>
+                <div class="subsection">
+                    <h3>遷移檢查</h3>
+                    <div id="diagnostics" class="stack muted-text">尚未取得診斷結果。</div>
+                </div>
+            </article>
+        </section>
+
+        <section class="panel">
+            <div class="section-head">
+                <h2>一般與串流設定</h2>
+                <button id="addStreamerBtn" class="ghost">新增直播主</button>
+            </div>
+            <div class="general-grid">
+                <label>
+                    <span>語言</span>
+                    <select id="langInput">
+                        <option value="ZH">繁體中文</option>
+                        <option value="EN">English</option>
+                    </select>
+                </label>
+                <label class="checkbox">
+                    <input id="enableLogInput" type="checkbox">
+                    <span>同步寫入 `app.log`</span>
+                </label>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>啟用</th>
+                            <th>Screen ID</th>
+                            <th>排程</th>
+                            <th>儲存資料夾</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="streamersBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="grid grid-settings">
+            <article class="panel">
+                <div class="section-head">
+                    <h2>Discord 通知</h2>
+                </div>
+                <div class="form-grid">
+                    <label class="checkbox">
+                        <input id="discordEnabledInput" type="checkbox">
+                        <span>啟用 Discord 通知</span>
+                    </label>
+                    <label>
+                        <span>Bot Token</span>
+                        <input id="discordTokenInput" type="password" autocomplete="new-password">
+                    </label>
+                    <label>
+                        <span>Guild ID</span>
+                        <input id="discordGuildInput" type="text">
+                    </label>
+                    <label>
+                        <span>通知頻道 ID</span>
+                        <input id="discordNotifyInput" type="text">
+                    </label>
+                    <label>
+                        <span>歸檔頻道 ID</span>
+                        <input id="discordArchiveInput" type="text">
+                    </label>
+                    <label class="checkbox">
+                        <input id="discordTagRoleInput" type="checkbox">
+                        <span>開播時標記對應角色</span>
+                    </label>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="section-head">
+                    <h2>Telegram 與轉檔</h2>
+                </div>
+                <div class="form-grid">
+                    <label class="checkbox">
+                        <input id="telegramEnabledInput" type="checkbox">
+                        <span>啟用 Telegram 上傳</span>
+                    </label>
+                    <label>
+                        <span>Bot Token</span>
+                        <input id="telegramTokenInput" type="password" autocomplete="new-password">
+                    </label>
+                    <label>
+                        <span>Chat ID</span>
+                        <input id="telegramChatInput" type="text">
+                    </label>
+                    <label>
+                        <span>API Endpoint</span>
+                        <input id="telegramEndpointInput" type="text" placeholder="https://api.telegram.org">
+                    </label>
+                    <label class="checkbox">
+                        <input id="telegramConvertInput" type="checkbox">
+                        <span>錄影完成後抽出 M4A 音訊</span>
+                    </label>
+                    <label class="checkbox">
+                        <input id="telegramKeepInput" type="checkbox">
+                        <span>轉檔後保留原始 TS</span>
+                    </label>
+                </div>
+            </article>
+        </section>
+
+        <section class="grid grid-bottom">
+            <article class="panel">
+                <div class="section-head">
+                    <h2>檔案管理</h2>
+                    <div class="inline-actions">
+                        <button id="fileUpBtn" class="ghost">上一層</button>
+                        <button id="fileRefreshBtn" class="ghost">重新整理</button>
+                    </div>
+                </div>
+                <div class="toolbar">
+                    <label>
+                        <span>根目錄</span>
+                        <select id="fileRootSelect"></select>
+                    </label>
+                    <div id="filePathLabel" class="path-pill">/</div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>名稱</th>
+                                <th>類型</th>
+                                <th>大小</th>
+                                <th>修改時間</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="filesBody"></tbody>
+                    </table>
+                </div>
+                <div class="subsection">
+                    <div class="section-head compact">
+                        <h3>文字預覽</h3>
+                        <button id="clearPreviewBtn" class="ghost">清除</button>
+                    </div>
+                    <pre id="filePreview" class="console">尚未選擇檔案。</pre>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="section-head">
+                    <h2>即時日誌</h2>
+                    <button id="logsRefreshBtn" class="ghost">重新整理</button>
+                </div>
+                <pre id="logsPanel" class="console">載入中...</pre>
+            </article>
+        </section>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+    <script src="/assets/app.js" defer></script>
+</body>
+</html>
