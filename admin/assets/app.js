@@ -550,9 +550,35 @@ function createFileRow(entry) {
     }
 
     if (entry.downloadable) {
+        const uploadButton = document.createElement("button");
+        uploadButton.type = "button";
+        uploadButton.className = "table-link";
+        uploadButton.textContent = actionsCell.childNodes.length ? " / 上傳" : "上傳";
+        uploadButton.addEventListener("click", async () => {
+            if (!window.confirm(`確定要把 ${entry.name} 上傳到 Telegram 嗎？`)) {
+                return;
+            }
+
+            const originalLabel = uploadButton.textContent;
+            uploadButton.disabled = true;
+            uploadButton.textContent = actionsCell.childNodes.length ? " / 上傳中…" : "上傳中…";
+            try {
+                const result = await api("/api/files/telegram-upload", {
+                    method: "POST",
+                    body: JSON.stringify({ root: fileState.root, path: entry.path })
+                });
+                const modeLabel = result.method === "audio" ? "音訊" : "檔案";
+                showToast(`已將 ${entry.name} 以上傳${modeLabel}送到 Telegram。`);
+            } finally {
+                uploadButton.disabled = false;
+                uploadButton.textContent = originalLabel;
+            }
+        });
+        actionsCell.appendChild(uploadButton);
+
         const downloadLink = document.createElement("a");
         downloadLink.className = "table-link";
-        downloadLink.textContent = entry.previewable ? " / 下載" : "下載";
+        downloadLink.textContent = actionsCell.childNodes.length ? " / 下載" : "下載";
         downloadLink.href = `/api/files/download?root=${encodeURIComponent(fileState.root)}&path=${encodeURIComponent(entry.path)}`;
         downloadLink.setAttribute("download", "");
         actionsCell.appendChild(downloadLink);

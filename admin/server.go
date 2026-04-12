@@ -24,6 +24,7 @@ import (
 	"github.com/jzhang046/croned-twitcasting-recorder/applog"
 	"github.com/jzhang046/croned-twitcasting-recorder/config"
 	"github.com/jzhang046/croned-twitcasting-recorder/service"
+	"github.com/jzhang046/croned-twitcasting-recorder/telegram"
 )
 
 //go:embed assets/*
@@ -97,6 +98,7 @@ func NewServer(options Options, manager *service.Manager, restartRequested chan<
 	mux.Handle("/api/files", server.withAuth(http.HandlerFunc(server.handleFiles)))
 	mux.Handle("/api/files/content", server.withAuth(http.HandlerFunc(server.handleFileContent)))
 	mux.Handle("/api/files/download", server.withAuth(http.HandlerFunc(server.handleFileDownload)))
+	mux.Handle("/api/files/telegram-upload", server.withAuth(http.HandlerFunc(server.handleFileTelegramUpload)))
 	mux.Handle("/api/files/delete", server.withAuth(http.HandlerFunc(server.handleFileDelete)))
 
 	server.httpServer = &http.Server{
@@ -502,6 +504,65 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, map[string]any{"deleted": true})
 }
 
+func (s *Server) handleFileTelegramUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		Root string `json:"root"`
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	_, targetFile, _, err := s.resolvePath(req.Root, req.Path)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	info, err := os.Lstat(targetFile)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		s.writeError(w, http.StatusBadRequest, errors.New("symlink Telegram upload is not supported"))
+		return
+	}
+	if info.IsDir() {
+		s.writeError(w, http.StatusBadRequest, errors.New("directory Telegram upload is not supported"))
+		return
+	}
+
+	telegramCfg := telegram.LoadConfig()
+	if !telegramCfg.Enabled {
+		s.writeError(w, http.StatusBadRequest, errors.New("Telegram uploads are disabled"))
+		return
+	}
+	if strings.TrimSpace(telegramCfg.BotToken) == "" || strings.TrimSpace(telegramCfg.ChatID) == "" {
+		s.writeError(w, http.StatusBadRequest, errors.New("Telegram bot token and chat_id are required"))
+		return
+	}
+
+	// 手動上傳要保留原檔案；音訊檔送 sendAudio，其餘檔案送 sendDocument。
+	method, err := telegram.UploadManagedFile(telegramCfg, targetFile, telegramCaption(filepath.Base(targetFile)))
+	if err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"uploaded": true,
+		"file":     filepath.Base(targetFile),
+		"method":   method,
+	})
+}
+
 func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, string, string, error) {
 	settings, err := LoadSettings()
 	if err != nil {
@@ -647,6 +708,18 @@ func pathWithinRoot(root, target string) bool {
 		return false
 	}
 	return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator)))
+}
+
+func telegramCaption(name string) string {
+	caption := strings.TrimSpace(name)
+	if caption == "" {
+		return "manual upload"
+	}
+	runes := []rune(caption)
+	if len(runes) <= 900 {
+		return caption
+	}
+	return string(runes[:900]) + "..."
 }
 
 func readTextPreview(path string, limit int64) (string, bool, error) {

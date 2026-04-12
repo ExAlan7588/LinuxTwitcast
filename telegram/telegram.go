@@ -22,6 +22,13 @@ type Config struct {
 	KeepOriginal bool   `json:"keep_original"`
 }
 
+type UploadMethod string
+
+const (
+	UploadMethodAudio    UploadMethod = "audio"
+	UploadMethodDocument UploadMethod = "document"
+)
+
 func LoadConfig() Config {
 	c := Config{
 		ApiEndpoint: "https://api.telegram.org",
@@ -84,6 +91,24 @@ func Process(cfg Config, filename, streamerName, title string) {
 }
 
 func UploadFile(cfg Config, filePath string, caption string) error {
+	return uploadFile(cfg, filePath, caption, UploadMethodAudio)
+}
+
+func UploadManagedFile(cfg Config, filePath string, caption string) (UploadMethod, error) {
+	method := uploadMethodForPath(filePath)
+	return method, uploadFile(cfg, filePath, caption, method)
+}
+
+func uploadMethodForPath(filePath string) UploadMethod {
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".aac", ".flac", ".m4a", ".m4b", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".wma":
+		return UploadMethodAudio
+	default:
+		return UploadMethodDocument
+	}
+}
+
+func uploadFile(cfg Config, filePath string, caption string, method UploadMethod) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -104,15 +129,14 @@ func UploadFile(cfg Config, filePath string, caption string) error {
 		_ = writer.WriteField("chat_id", cfg.ChatID)
 		_ = writer.WriteField("caption", caption)
 
-		// Create form file
-		part, err := writer.CreateFormFile("audio", filepath.Base(filePath))
+		part, err := writer.CreateFormFile(uploadFieldName(method), filepath.Base(filePath))
 		if err != nil {
 			return
 		}
 		io.Copy(part, file)
 	}()
 
-	url := fmt.Sprintf("%s/bot%s/sendAudio", strings.TrimRight(cfg.ApiEndpoint, "/"), cfg.BotToken)
+	url := fmt.Sprintf("%s/bot%s/%s", strings.TrimRight(cfg.ApiEndpoint, "/"), cfg.BotToken, uploadMethodEndpoint(method))
 	req, err := http.NewRequest("POST", url, pr)
 	if err != nil {
 		return err
@@ -132,4 +156,18 @@ func UploadFile(cfg Config, filePath string, caption string) error {
 	}
 
 	return nil
+}
+
+func uploadFieldName(method UploadMethod) string {
+	if method == UploadMethodDocument {
+		return "document"
+	}
+	return "audio"
+}
+
+func uploadMethodEndpoint(method UploadMethod) string {
+	if method == UploadMethodDocument {
+		return "sendDocument"
+	}
+	return "sendAudio"
 }

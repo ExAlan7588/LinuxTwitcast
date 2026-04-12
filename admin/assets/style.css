@@ -532,6 +532,12 @@ td.actions-cell {
     text-decoration: underline;
 }
 
+.table-link:disabled {
+    cursor: wait;
+    opacity: 0.55;
+    text-decoration: none;
+}
+
 .mono {
     font-family: "Cascadia Code", "Consolas", monospace;
 }
