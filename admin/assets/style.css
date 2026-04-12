@@ -130,11 +130,49 @@ h1 {
 }
 
 .actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    align-content: flex-start;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-areas:
+        "theme refresh save stop"
+        "start restart save bot";
+    grid-auto-rows: minmax(52px, auto);
+    gap: 12px;
+    align-self: stretch;
+}
+
+.actions button {
+    width: 100%;
+    min-width: 0;
+}
+
+.action-theme {
+    grid-area: theme;
+}
+
+.action-refresh {
+    grid-area: refresh;
+}
+
+.action-save {
+    grid-area: save;
+    align-self: stretch;
+    min-height: 116px;
+}
+
+.action-start {
+    grid-area: start;
+}
+
+.action-stop {
+    grid-area: stop;
+}
+
+.action-restart {
+    grid-area: restart;
+}
+
+.action-bot {
+    grid-area: bot;
 }
 
 .grid {
@@ -549,10 +587,6 @@ html[data-theme="light"] tbody tr:hover td {
     .grid-bottom {
         grid-template-columns: 1fr;
     }
-
-    .actions {
-        justify-content: flex-start;
-    }
 }
 
 @media (max-width: 720px) {
@@ -573,5 +607,32 @@ html[data-theme="light"] tbody tr:hover td {
 
     .toolbar {
         align-items: stretch;
+    }
+
+    .actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas:
+            "theme refresh"
+            "save stop"
+            "start restart"
+            "bot bot";
+    }
+
+    .action-save {
+        min-height: 52px;
+    }
+}
+
+@media (max-width: 560px) {
+    .actions {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "theme"
+            "refresh"
+            "save"
+            "start"
+            "stop"
+            "restart"
+            "bot";
     }
 }
