@@ -3,7 +3,7 @@ const fileState = { root: "", path: "" };
 const THEME_STORAGE_KEY = "twitcast-theme";
 const HIDE_OFFLINE_LOGS_STORAGE_KEY = "twitcast-hide-offline-logs";
 const themeState = { value: "dark" };
-const logState = { lines: [], hideOffline: true };
+const logState = { lines: [], hideOffline: true, filteredCount: 0 };
 let botRestartPending = false;
 let toastTimer = null;
 
@@ -46,6 +46,7 @@ function cacheElements() {
     ui.filesBody = document.getElementById("filesBody");
     ui.filePreview = document.getElementById("filePreview");
     ui.logsPanel = document.getElementById("logsPanel");
+    ui.logsSummary = document.getElementById("logsSummary");
     ui.hideOfflineLogsInput = document.getElementById("hideOfflineLogsInput");
 
     ui.themeToggleBtn = document.getElementById("themeToggleBtn");
@@ -138,7 +139,7 @@ function handleOfflineLogFilterChange() {
     try {
         window.localStorage.setItem(HIDE_OFFLINE_LOGS_STORAGE_KEY, logState.hideOffline ? "1" : "0");
     } catch {}
-    renderLogs();
+    loadLogs().catch(handleError);
 }
 
 async function boot() {
@@ -192,33 +193,40 @@ async function loadSettings() {
 }
 
 async function loadLogs() {
-    const data = await api("/api/logs?limit=250");
+    const params = new URLSearchParams({ limit: "250" });
+    if (logState.hideOffline) {
+        params.set("hide_offline", "1");
+    }
+    const data = await api(`/api/logs?${params.toString()}`);
     logState.lines = Array.isArray(data.lines) ? data.lines : [];
+    logState.filteredCount = Number.isFinite(data.filtered_count) ? data.filtered_count : 0;
     renderLogs();
 }
 
-// 直播未开播时会周期性报 offline，这类轮询噪音默认隐藏，避免淹没真正错误。
+// 把 offline 輪詢提前在後端過濾，避免大量噪音先把有用日誌擠出最後 250 筆。
 function renderLogs() {
-    const lines = filterLogLines(logState.lines);
+    ui.logsSummary.textContent = buildLogSummary();
+
     if (!logState.lines.length) {
-        ui.logsPanel.textContent = "目前沒有可顯示的日誌。";
-    } else if (!lines.length) {
-        ui.logsPanel.textContent = "目前的日誌都被「隱藏離線輪詢」過濾掉了。";
+        if (logState.hideOffline && logState.filteredCount > 0) {
+            ui.logsPanel.textContent = `最近保留下來的有效日誌為空，已隱藏 ${logState.filteredCount} 筆離線輪詢。取消勾選可查看原始內容。`;
+        } else {
+            ui.logsPanel.textContent = "目前沒有可顯示的日誌。";
+        }
     } else {
-        ui.logsPanel.textContent = lines.join("\n");
+        ui.logsPanel.textContent = logState.lines.join("\n");
     }
     ui.logsPanel.scrollTop = ui.logsPanel.scrollHeight;
 }
 
-function filterLogLines(lines) {
+function buildLogSummary() {
     if (!logState.hideOffline) {
-        return lines;
+        return "顯示原始即時日誌。";
     }
-    return lines.filter((line) => !isOfflinePollingLog(line));
-}
-
-function isOfflinePollingLog(line) {
-    return line.includes("Error fetching stream URL for streamer [") && line.includes("live stream is offline");
+    if (logState.filteredCount <= 0) {
+        return "已啟用離線輪詢過濾。";
+    }
+    return `已隱藏 ${logState.filteredCount} 筆離線輪詢日誌。`;
 }
 
 function renderStatus(data) {

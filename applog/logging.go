@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-const defaultMaxLines = 400
+const defaultMaxLines = 2000
 
 var (
 	configMu   sync.Mutex
@@ -73,6 +73,36 @@ func (r *ringBuffer) Lines(limit int) []string {
 	return snapshot
 }
 
+func (r *ringBuffer) FilteredLines(limit int, keep func(string) bool) ([]string, int) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	candidates := make([]string, 0, len(r.lines)+1)
+	candidates = append(candidates, r.lines...)
+	if r.partial != "" {
+		candidates = append(candidates, r.partial)
+	}
+
+	filteredCount := 0
+	kept := make([]string, 0, len(candidates))
+	for _, line := range candidates {
+		if keep != nil && !keep(line) {
+			filteredCount++
+			continue
+		}
+		kept = append(kept, line)
+	}
+
+	if limit <= 0 || limit > len(kept) {
+		limit = len(kept)
+	}
+
+	start := len(kept) - limit
+	snapshot := make([]string, limit)
+	copy(snapshot, kept[start:])
+	return snapshot, filteredCount
+}
+
 func (r *ringBuffer) push(line string) {
 	if len(r.lines) == r.max {
 		copy(r.lines, r.lines[1:])
@@ -111,4 +141,8 @@ func ConfigureFromEnv() error {
 
 func RecentLines(limit int) []string {
 	return buffer.Lines(limit)
+}
+
+func RecentLinesFiltered(limit int, keep func(string) bool) ([]string, int) {
+	return buffer.FilteredLines(limit, keep)
 }

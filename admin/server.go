@@ -272,8 +272,21 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePositiveInt(r.URL.Query().Get("limit"), 200, 500)
+	hideOffline := r.URL.Query().Get("hide_offline") == "1"
+	if hideOffline {
+		lines, filteredCount := applog.RecentLinesFiltered(limit, func(line string) bool {
+			return !isOfflinePollingLogLine(line)
+		})
+		s.writeJSON(w, map[string]any{
+			"lines":          lines,
+			"filtered_count": filteredCount,
+		})
+		return
+	}
+
 	s.writeJSON(w, map[string]any{
-		"lines": applog.RecentLines(limit),
+		"lines":          applog.RecentLines(limit),
+		"filtered_count": 0,
 	})
 }
 
@@ -681,6 +694,11 @@ func bytesContainNull(data []byte) bool {
 		}
 	}
 	return false
+}
+
+func isOfflinePollingLogLine(line string) bool {
+	return strings.Contains(line, "Error fetching stream URL for streamer [") &&
+		strings.Contains(line, "live stream is offline")
 }
 
 func isPublicListen(addr string) bool {
