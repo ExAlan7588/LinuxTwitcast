@@ -44,7 +44,6 @@ function cacheElements() {
     ui.filePathLabel = document.getElementById("filePathLabel");
     ui.fileUpBtn = document.getElementById("fileUpBtn");
     ui.filesBody = document.getElementById("filesBody");
-    ui.filePreview = document.getElementById("filePreview");
     ui.logsPanel = document.getElementById("logsPanel");
     ui.logsSummary = document.getElementById("logsSummary");
     ui.hideOfflineLogsInput = document.getElementById("hideOfflineLogsInput");
@@ -59,7 +58,6 @@ function cacheElements() {
     ui.addStreamerBtn = document.getElementById("addStreamerBtn");
     ui.fileRefreshBtn = document.getElementById("fileRefreshBtn");
     ui.logsRefreshBtn = document.getElementById("logsRefreshBtn");
-    ui.clearPreviewBtn = document.getElementById("clearPreviewBtn");
     ui.toast = document.getElementById("toast");
 }
 
@@ -77,9 +75,6 @@ function bindEvents() {
     ui.fileRefreshBtn.addEventListener("click", () => browseFiles(fileState.root, fileState.path).catch(handleError));
     ui.logsRefreshBtn.addEventListener("click", () => loadLogs().catch(handleError));
     ui.hideOfflineLogsInput.addEventListener("change", handleOfflineLogFilterChange);
-    ui.clearPreviewBtn.addEventListener("click", () => {
-        ui.filePreview.textContent = "尚未選擇檔案。";
-    });
 }
 
 // 主題切換要在頁面載入初期就同步，避免先閃成錯誤配色。
@@ -540,15 +535,6 @@ function createFileRow(entry) {
     sizeCell.className = "mono";
     modifiedCell.textContent = formatDate(entry.modified_at);
 
-    if (entry.previewable) {
-        const previewButton = document.createElement("button");
-        previewButton.type = "button";
-        previewButton.className = "table-link";
-        previewButton.textContent = "預覽";
-        previewButton.addEventListener("click", () => previewFile(entry.path).catch(handleError));
-        actionsCell.appendChild(previewButton);
-    }
-
     if (entry.downloadable) {
         const uploadButton = document.createElement("button");
         uploadButton.type = "button";
@@ -605,11 +591,6 @@ function createFileRow(entry) {
 
     row.append(nameCell, typeCell, sizeCell, modifiedCell, actionsCell);
     return row;
-}
-
-async function previewFile(path) {
-    const data = await api(`/api/files/content?root=${encodeURIComponent(fileState.root)}&path=${encodeURIComponent(path)}`);
-    ui.filePreview.textContent = data.truncated ? `${data.content}\n\n[預覽已截斷]` : data.content;
 }
 
 function parentPath(path) {

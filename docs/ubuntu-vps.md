@@ -47,7 +47,6 @@ If you already protect the app behind Nginx, Caddy, Tailscale, or an SSH tunnel,
 - Start, stop, and restart the recorder
 - View recent logs captured from the Go process
 - Browse recording folders and the project workspace
-- Preview text files
 - Download files
 - Delete files or empty directories
 

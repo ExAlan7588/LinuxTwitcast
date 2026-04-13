@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -19,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jzhang046/croned-twitcasting-recorder/applog"
 	"github.com/jzhang046/croned-twitcasting-recorder/config"
@@ -65,7 +63,6 @@ type FileEntry struct {
 	Type         string `json:"type"`
 	Size         int64  `json:"size"`
 	ModifiedAt   string `json:"modified_at"`
-	Previewable  bool   `json:"previewable"`
 	Downloadable bool   `json:"downloadable"`
 	Deletable    bool   `json:"deletable"`
 }
@@ -96,7 +93,6 @@ func NewServer(options Options, manager *service.Manager, restartRequested chan<
 	mux.Handle("/api/logs", server.withAuth(http.HandlerFunc(server.handleLogs)))
 	mux.Handle("/api/files/roots", server.withAuth(http.HandlerFunc(server.handleFileRoots)))
 	mux.Handle("/api/files", server.withAuth(http.HandlerFunc(server.handleFiles)))
-	mux.Handle("/api/files/content", server.withAuth(http.HandlerFunc(server.handleFileContent)))
 	mux.Handle("/api/files/download", server.withAuth(http.HandlerFunc(server.handleFileDownload)))
 	mux.Handle("/api/files/telegram-upload", server.withAuth(http.HandlerFunc(server.handleFileTelegramUpload)))
 	mux.Handle("/api/files/delete", server.withAuth(http.HandlerFunc(server.handleFileDelete)))
@@ -353,7 +349,6 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		kind := "file"
-		previewable := false
 		downloadable := true
 		deletable := true
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -363,8 +358,6 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		} else if entry.IsDir() {
 			kind = "dir"
 			downloadable = false
-		} else {
-			previewable = isPreviewableTextFile(fullPath, fileInfo.Size())
 		}
 
 		relEntryPath, _ := filepath.Rel(rootDir, fullPath)
@@ -374,7 +367,6 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 			Type:         kind,
 			Size:         fileInfo.Size(),
 			ModifiedAt:   fileInfo.ModTime().Format(time.RFC3339),
-			Previewable:  previewable,
 			Downloadable: downloadable,
 			Deletable:    deletable,
 		})
@@ -393,45 +385,6 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		Path:    filepath.ToSlash(relativePath),
 		Parent:  parent,
 		Entries: entries,
-	})
-}
-
-func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.methodNotAllowed(w)
-		return
-	}
-
-	_, targetFile, _, err := s.resolvePath(r.URL.Query().Get("root"), r.URL.Query().Get("path"))
-	if err != nil {
-		s.writeError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	info, err := os.Lstat(targetFile)
-	if err != nil {
-		s.writeError(w, http.StatusNotFound, err)
-		return
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		s.writeError(w, http.StatusBadRequest, errors.New("symlink preview is not supported"))
-		return
-	}
-	if info.IsDir() {
-		s.writeError(w, http.StatusBadRequest, errors.New("directory preview is not supported"))
-		return
-	}
-
-	content, truncated, err := readTextPreview(targetFile, 64*1024)
-	if err != nil {
-		s.writeError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	s.writeJSON(w, map[string]any{
-		"path":      filepath.ToSlash(r.URL.Query().Get("path")),
-		"content":   content,
-		"truncated": truncated,
 	})
 }
 
@@ -720,53 +673,6 @@ func telegramCaption(name string) string {
 		return caption
 	}
 	return string(runes[:900]) + "..."
-}
-
-func readTextPreview(path string, limit int64) (string, bool, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", false, err
-	}
-	defer file.Close()
-
-	reader := io.LimitReader(file, limit+1)
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return "", false, err
-	}
-
-	truncated := int64(len(data)) > limit
-	if truncated {
-		data = data[:limit]
-	}
-	if !utf8.Valid(data) || bytesContainNull(data) {
-		return "", false, errors.New("binary file preview is not supported")
-	}
-
-	return string(data), truncated, nil
-}
-
-func isPreviewableTextFile(path string, size int64) bool {
-	if size > 512*1024 {
-		return false
-	}
-
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".txt", ".log", ".json", ".md", ".yaml", ".yml", ".service", ".conf", ".ini", ".py", ".go", ".js", ".css", ".html", ".sh":
-		return true
-	default:
-		return false
-	}
-}
-
-func bytesContainNull(data []byte) bool {
-	for _, value := range data {
-		if value == 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func isOfflinePollingLogLine(line string) bool {
