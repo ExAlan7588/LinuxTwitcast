@@ -151,7 +151,7 @@ func buildStartEmbed(title, screenID string, elapsed time.Duration) embed {
 			IconUrl: "https://ja.twitcasting.tv/img/icon192.png",
 		},
 		Fields: []field{
-			{Name: "狀態標籤", Value: "<a:live:1026402432612732948> 🔴 **正在錄影中...**", Inline: true},
+			{Name: "狀態標籤", Value: "🔴 **正在錄影中...**", Inline: true},
 			{Name: "檔案時長", Value: fmt.Sprintf("⏱️ **%s**（持續更新）", formatDuration(elapsed)), Inline: true},
 		},
 		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統"},

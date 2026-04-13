@@ -11,9 +11,13 @@ import (
 	"github.com/jzhang046/croned-twitcasting-recorder/record"
 )
 
-const (
-	wsReconnectGracePeriod   = 20 * time.Second
+var (
+	wsReconnectGracePeriod   = 2 * time.Minute
 	wsReconnectRetryInterval = 2 * time.Second
+	wsReconnectURLFetcher    = func(streamer string) (string, error) {
+		streamURL, _, _, err := GetWSStreamUrl(streamer)
+		return streamURL, err
+	}
 )
 
 func RecordWS(recordCtx record.RecordContext, sinkChan chan<- []byte) {
@@ -41,7 +45,7 @@ func RecordWS(recordCtx record.RecordContext, sinkChan chan<- []byte) {
 				return
 			}
 
-			// TwitCasting 的 WebSocket 會偶發短暫斷線；先嘗試重抓 stream URL，
+			// TwitCasting 的 WebSocket 會偶發短暫斷線；給更長的寬限期重抓 stream URL，
 			// 避免把同一場直播切成多段並重複發 Discord/Telegram 通知。
 			nextURL, reconnectErr := waitForReconnectURL(recordCtx, streamer, err)
 			if reconnectErr != nil {
@@ -114,7 +118,7 @@ func waitForReconnectURL(recordCtx record.RecordContext, streamer string, discon
 			return "", recordCtx.Err()
 		}
 
-		streamURL, _, _, err := GetWSStreamUrl(streamer)
+		streamURL, err := wsReconnectURLFetcher(streamer)
 		if err == nil {
 			log.Printf("Stream [%s] reconnected within grace period\n", streamer)
 			return streamURL, nil
