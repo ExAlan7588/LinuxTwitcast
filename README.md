@@ -24,6 +24,7 @@ By default, this fork talks to the official Telegram Bot API at `https://api.tel
 If you manually change the Telegram API endpoint to a local Bot API server, see:
 
 - Telegram Bot API server: https://github.com/tdlib/telegram-bot-api
+- Why would I need this? https://github.com/ExAlan7588/LinuxTwitcast/blob/main/README.md#telegram-notes
 
 ## Platform Support
 
@@ -414,7 +415,6 @@ cd /opt/LinuxTwitcast
 git pull origin main
 go build -o twitcast_bot .
 pm2 restart twitcast-bot
-pm2 logs twitcast-bot --lines 50
 ```
 
 ### Systemd Example
