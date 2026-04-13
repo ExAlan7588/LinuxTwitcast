@@ -9,8 +9,9 @@ import (
 	"time"
 )
 
+var discordAPI = "https://discord.com/api/v10"
+
 const (
-	discordAPI     = "https://discord.com/api/v10"
 	updateInterval = 30 * time.Second
 	colorGreen     = 0x2ecc71
 	colorGray      = 0x95a5a6

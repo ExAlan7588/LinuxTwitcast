@@ -32,6 +32,7 @@ function cacheElements() {
     ui.discordNotifyInput = document.getElementById("discordNotifyInput");
     ui.discordArchiveInput = document.getElementById("discordArchiveInput");
     ui.discordTagRoleInput = document.getElementById("discordTagRoleInput");
+    ui.discordTestBtn = document.getElementById("discordTestBtn");
 
     ui.telegramEnabledInput = document.getElementById("telegramEnabledInput");
     ui.telegramTokenInput = document.getElementById("telegramTokenInput");
@@ -39,6 +40,7 @@ function cacheElements() {
     ui.telegramEndpointInput = document.getElementById("telegramEndpointInput");
     ui.telegramConvertInput = document.getElementById("telegramConvertInput");
     ui.telegramKeepInput = document.getElementById("telegramKeepInput");
+    ui.telegramTestBtn = document.getElementById("telegramTestBtn");
 
     ui.fileRootSelect = document.getElementById("fileRootSelect");
     ui.filePathLabel = document.getElementById("filePathLabel");
@@ -65,6 +67,8 @@ function bindEvents() {
     ui.themeToggleBtn.addEventListener("click", toggleTheme);
     ui.refreshBtn.addEventListener("click", () => refreshAll().catch(handleError));
     ui.saveSettingsBtn.addEventListener("click", () => saveSettings().catch(handleError));
+    ui.discordTestBtn.addEventListener("click", () => sendDiscordTest().catch(handleError));
+    ui.telegramTestBtn.addEventListener("click", () => sendTelegramTest().catch(handleError));
     ui.startRecorderBtn.addEventListener("click", () => controlRecorder("start").catch(handleError));
     ui.stopRecorderBtn.addEventListener("click", () => controlRecorder("stop").catch(handleError));
     ui.restartRecorderBtn.addEventListener("click", () => controlRecorder("restart").catch(handleError));
@@ -385,7 +389,50 @@ async function saveSettings() {
     await refreshAll();
 }
 
+// 测试按钮要直接吃当前表单值，避免用户还没保存就无法验证通知配置。
+async function sendDiscordTest() {
+    await runButtonAction(ui.discordTestBtn, "發送中…", async () => {
+        const payload = collectDiscordSettings();
+        await api("/api/discord/test", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        showToast("Discord 測試訊息已送出。");
+    });
+}
+
+async function sendTelegramTest() {
+    await runButtonAction(ui.telegramTestBtn, "發送中…", async () => {
+        const payload = collectTelegramSettings();
+        await api("/api/telegram/test", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        showToast("Telegram 測試訊息已送出。");
+    });
+}
+
+async function runButtonAction(button, busyLabel, action) {
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = busyLabel;
+    try {
+        await action();
+    } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+    }
+}
+
 function collectSettings() {
+    const app = collectAppSettings();
+    const discord = collectDiscordSettings();
+    const telegram = collectTelegramSettings();
+
+    return { app, discord, telegram };
+}
+
+function collectAppSettings() {
     const streamers = Array.from(ui.streamersBody.querySelectorAll("[data-streamer-row='1']")).map((row) => ({
         enabled: row.querySelector('[data-field="enabled"]').checked,
         "screen-id": row.querySelector('[data-field="screen-id"]').value.trim(),
@@ -394,27 +441,31 @@ function collectSettings() {
     })).filter((streamer) => streamer["screen-id"] || streamer.folder || streamer.schedule);
 
     return {
-        app: {
-            lang: ui.langInput.value,
-            enable_log: ui.enableLogInput.checked,
-            streamers
-        },
-        discord: {
-            enabled: ui.discordEnabledInput.checked,
-            bot_token: ui.discordTokenInput.value.trim(),
-            guild_id: ui.discordGuildInput.value.trim(),
-            notify_channel_id: ui.discordNotifyInput.value.trim(),
-            archive_channel_id: ui.discordArchiveInput.value.trim(),
-            tag_role: ui.discordTagRoleInput.checked
-        },
-        telegram: {
-            enabled: ui.telegramEnabledInput.checked,
-            bot_token: ui.telegramTokenInput.value.trim(),
-            chat_id: ui.telegramChatInput.value.trim(),
-            api_endpoint: ui.telegramEndpointInput.value.trim(),
-            convert_to_m4a: ui.telegramConvertInput.checked,
-            keep_original: ui.telegramKeepInput.checked
-        }
+        lang: ui.langInput.value,
+        enable_log: ui.enableLogInput.checked,
+        streamers
+    };
+}
+
+function collectDiscordSettings() {
+    return {
+        enabled: ui.discordEnabledInput.checked,
+        bot_token: ui.discordTokenInput.value.trim(),
+        guild_id: ui.discordGuildInput.value.trim(),
+        notify_channel_id: ui.discordNotifyInput.value.trim(),
+        archive_channel_id: ui.discordArchiveInput.value.trim(),
+        tag_role: ui.discordTagRoleInput.checked
+    };
+}
+
+function collectTelegramSettings() {
+    return {
+        enabled: ui.telegramEnabledInput.checked,
+        bot_token: ui.telegramTokenInput.value.trim(),
+        chat_id: ui.telegramChatInput.value.trim(),
+        api_endpoint: ui.telegramEndpointInput.value.trim(),
+        convert_to_m4a: ui.telegramConvertInput.checked,
+        keep_original: ui.telegramKeepInput.checked
     };
 }
 

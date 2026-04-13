@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"mime/multipart"
+	"net/url"
 	"net/http"
 	"os"
 	"os/exec"
@@ -99,6 +100,38 @@ func UploadManagedFile(cfg Config, filePath string, caption string) (UploadMetho
 	return method, uploadFile(cfg, filePath, caption, method)
 }
 
+func SendTestMessage(cfg Config, text string) error {
+	if strings.TrimSpace(cfg.BotToken) == "" {
+		return fmt.Errorf("telegram bot token is required")
+	}
+	if strings.TrimSpace(cfg.ChatID) == "" {
+		return fmt.Errorf("telegram chat_id is required")
+	}
+
+	form := url.Values{}
+	form.Set("chat_id", cfg.ChatID)
+	form.Set("text", text)
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/bot%s/sendMessage", strings.TrimRight(apiEndpoint(cfg.ApiEndpoint), "/"), cfg.BotToken), strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("bad status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
 func uploadMethodForPath(filePath string) UploadMethod {
 	switch strings.ToLower(filepath.Ext(filePath)) {
 	case ".aac", ".flac", ".m4a", ".m4b", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".wma":
@@ -136,7 +169,7 @@ func uploadFile(cfg Config, filePath string, caption string, method UploadMethod
 		io.Copy(part, file)
 	}()
 
-	url := fmt.Sprintf("%s/bot%s/%s", strings.TrimRight(cfg.ApiEndpoint, "/"), cfg.BotToken, uploadMethodEndpoint(method))
+	url := fmt.Sprintf("%s/bot%s/%s", strings.TrimRight(apiEndpoint(cfg.ApiEndpoint), "/"), cfg.BotToken, uploadMethodEndpoint(method))
 	req, err := http.NewRequest("POST", url, pr)
 	if err != nil {
 		return err
@@ -170,4 +203,11 @@ func uploadMethodEndpoint(method UploadMethod) string {
 		return "sendDocument"
 	}
 	return "sendAudio"
+}
+
+func apiEndpoint(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return "https://api.telegram.org"
+	}
+	return raw
 }

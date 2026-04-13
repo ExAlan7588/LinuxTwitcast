@@ -21,6 +21,7 @@ import (
 
 	"github.com/jzhang046/croned-twitcasting-recorder/applog"
 	"github.com/jzhang046/croned-twitcasting-recorder/config"
+	"github.com/jzhang046/croned-twitcasting-recorder/discord"
 	"github.com/jzhang046/croned-twitcasting-recorder/service"
 	"github.com/jzhang046/croned-twitcasting-recorder/telegram"
 )
@@ -86,6 +87,8 @@ func NewServer(options Options, manager *service.Manager, restartRequested chan<
 	mux.Handle("/assets/", server.withAuth(server.assetHandler()))
 	mux.Handle("/api/status", server.withAuth(http.HandlerFunc(server.handleStatus)))
 	mux.Handle("/api/settings", server.withAuth(http.HandlerFunc(server.handleSettings)))
+	mux.Handle("/api/discord/test", server.withAuth(http.HandlerFunc(server.handleDiscordTest)))
+	mux.Handle("/api/telegram/test", server.withAuth(http.HandlerFunc(server.handleTelegramTest)))
 	mux.Handle("/api/recorder/start", server.withAuth(http.HandlerFunc(server.handleRecorderStart)))
 	mux.Handle("/api/recorder/stop", server.withAuth(http.HandlerFunc(server.handleRecorderStop)))
 	mux.Handle("/api/recorder/restart", server.withAuth(http.HandlerFunc(server.handleRecorderRestart)))
@@ -193,6 +196,54 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.methodNotAllowed(w)
 	}
+}
+
+// 测试通知直接读取请求里的临时配置，避免必须先落盘才能验证 token 和目标频道。
+func (s *Server) handleDiscordTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	var cfg discord.Config
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := discord.SendTestMessage(cfg, fmt.Sprintf("LinuxTwitcast Discord 測試訊息\n時間: %s\n來源: Web 管理頁", time.Now().Format(time.RFC3339))); err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"sent":       true,
+		"channel_id": strings.TrimSpace(cfg.NotifyChannelID),
+	})
+}
+
+// 测试通知直接读取请求里的临时配置，避免必须先落盘才能验证 token 和 chat_id。
+func (s *Server) handleTelegramTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	var cfg telegram.Config
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := telegram.SendTestMessage(cfg, fmt.Sprintf("LinuxTwitcast Telegram 測試訊息\n時間: %s\n來源: Web 管理頁", time.Now().Format(time.RFC3339))); err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"sent":    true,
+		"chat_id": strings.TrimSpace(cfg.ChatID),
+	})
 }
 
 func (s *Server) handleRecorderStart(w http.ResponseWriter, r *http.Request) {
