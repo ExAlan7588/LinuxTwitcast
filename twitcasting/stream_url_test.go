@@ -1,27 +1,33 @@
 package twitcasting
 
-/**
-Example streamserver.php API response:
-{
-  "movie": {
-    "id": 1234, // number
-    "live": true
-  },
-  "hls": {
-    "host": "twitcasting.tv",
-    "proto": "https",
-    "source": false
-  },
-  "fmp4": {
-    "host": "10-0-0-1.twitcasting.tv", // Decimal IP number separated by dash
-    "proto": "wss",
-    "source": false,
-    "mobilesource": false
-  },
-  "llfmp4": {
-    "streams": {
-      "main": "wss://10-0-0-1.twitcasting.tv/tc.edge/v1/streams/1234.567.89/fmp4"
-    }
-  }
+import "testing"
+
+func TestRequiresStreamPassword(t *testing.T) {
+	body := `
+		<div class="tw-empty-state tw-player-page-lock-empty-state">
+			<form method="POST">
+				<input type="text" name="password" value="">
+			</form>
+		</div>
+	`
+
+	if !requiresStreamPassword(body) {
+		t.Fatal("expected password-protected page to be detected")
+	}
+
+	if requiresStreamPassword(`<form method="POST"><input type="text" name="nickname"></form>`) {
+		t.Fatal("unexpected password detection on a normal form")
+	}
 }
-*/
+
+func TestAppendPasswordToken(t *testing.T) {
+	got := appendPasswordToken("wss://example.test/stream?id=1", "secret")
+	want := "wss://example.test/stream?id=1&word=5ebe2294ecd0e0f08eab7690d2a6ee69"
+	if got != want {
+		t.Fatalf("appendPasswordToken() = %q, want %q", got, want)
+	}
+
+	if unchanged := appendPasswordToken("wss://example.test/stream?id=1", ""); unchanged != "wss://example.test/stream?id=1" {
+		t.Fatalf("expected URL without password to remain unchanged, got %q", unchanged)
+	}
+}

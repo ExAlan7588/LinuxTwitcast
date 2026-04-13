@@ -297,6 +297,10 @@ h1 {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.helper-note {
+    margin-bottom: 14px;
+}
+
 label {
     display: grid;
     gap: 8px;

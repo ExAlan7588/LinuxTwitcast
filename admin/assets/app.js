@@ -58,9 +58,11 @@ const I18N = {
         "settings.langEnglish": "English",
         "settings.langChinese": "Traditional Chinese",
         "settings.mirrorLogs": "Mirror logs to `app.log`",
+        "settings.passwordHint": "If the streamer uses a TwitCasting secret word, enter it in the password column. Leave it blank for normal streams.",
         "table.enabled": "Enabled",
         "table.screenId": "Screen ID",
         "table.schedule": "Schedule",
+        "table.streamPassword": "Live Password",
         "table.targetFolder": "Target Folder",
         "table.name": "Name",
         "table.type": "Type",
@@ -115,6 +117,7 @@ const I18N = {
         "metrics.latestError": "Latest Error",
         "metrics.notStarted": "Not started",
         "streamers.none": "No streamers are configured yet. Use \"Add Streamer\" to create one.",
+        "streamers.placeholderPassword": "Optional",
         "streamers.placeholderFolder": "Recordings/streamer-name",
         "streamers.remove": "Remove",
         "save.saved": "Settings saved.",
@@ -179,9 +182,11 @@ const I18N = {
         "settings.langEnglish": "英文",
         "settings.langChinese": "繁體中文",
         "settings.mirrorLogs": "同步寫入 `app.log`",
+        "settings.passwordHint": "若該直播主使用 TwitCasting 合言葉，請在密碼欄填入；一般直播則留白即可。",
         "table.enabled": "啟用",
         "table.screenId": "Screen ID",
         "table.schedule": "排程",
+        "table.streamPassword": "直播密碼",
         "table.targetFolder": "目標資料夾",
         "table.name": "名稱",
         "table.type": "類型",
@@ -236,6 +241,7 @@ const I18N = {
         "metrics.latestError": "最近錯誤",
         "metrics.notStarted": "尚未啟動",
         "streamers.none": "目前尚未設定任何直播主，請使用「新增直播主」建立一筆。",
+        "streamers.placeholderPassword": "選填",
         "streamers.placeholderFolder": "錄影/直播主名稱",
         "streamers.remove": "移除",
         "save.saved": "設定已儲存。",
@@ -357,6 +363,10 @@ function applyLanguage(language) {
 
     if (appState.files) {
         renderFiles(appState.files);
+    }
+
+    if (ui.streamersBody?.querySelector("[data-streamer-row='1'], td[colspan]")) {
+        renderStreamers(collectStreamerRows());
     }
 
     renderLogs();
@@ -643,7 +653,7 @@ function renderStreamers(streamers) {
 
     if (!streamers.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="5" class="muted-text">${escapeHtml(t("streamers.none"))}</td>`;
+        row.innerHTML = `<td colspan="6" class="muted-text">${escapeHtml(t("streamers.none"))}</td>`;
         ui.streamersBody.appendChild(row);
         return;
     }
@@ -660,6 +670,7 @@ function createStreamerRow(streamer = {}) {
         <td><input type="checkbox" data-field="enabled"></td>
         <td><input type="text" data-field="screen-id" placeholder="mielu_ii"></td>
         <td><input type="text" data-field="schedule" placeholder="@every 5s"></td>
+        <td><input type="password" data-field="password" autocomplete="new-password" placeholder="${escapeHtml(t("streamers.placeholderPassword"))}"></td>
         <td><input type="text" data-field="folder" placeholder="${escapeHtml(t("streamers.placeholderFolder"))}"></td>
         <td class="actions-cell"><button type="button" class="small danger">${escapeHtml(t("streamers.remove"))}</button></td>
     `;
@@ -667,6 +678,7 @@ function createStreamerRow(streamer = {}) {
     row.querySelector('[data-field="enabled"]').checked = Boolean(streamer.enabled ?? true);
     row.querySelector('[data-field="screen-id"]').value = streamer["screen-id"] || "";
     row.querySelector('[data-field="schedule"]').value = streamer.schedule || "@every 5s";
+    row.querySelector('[data-field="password"]').value = streamer.password || "";
     row.querySelector('[data-field="folder"]').value = streamer.folder || "";
     row.querySelector("button").addEventListener("click", () => {
         row.remove();
@@ -679,7 +691,7 @@ function createStreamerRow(streamer = {}) {
 }
 
 function addStreamerRow() {
-    const placeholder = ui.streamersBody.querySelector("td[colspan='5']");
+    const placeholder = ui.streamersBody.querySelector("td[colspan='6']");
     if (placeholder) {
         ui.streamersBody.innerHTML = "";
     }
@@ -762,18 +774,23 @@ function collectSettings() {
 }
 
 function collectAppSettings() {
-    const streamers = Array.from(ui.streamersBody.querySelectorAll("[data-streamer-row='1']")).map((row) => ({
-        enabled: row.querySelector('[data-field="enabled"]').checked,
-        "screen-id": row.querySelector('[data-field="screen-id"]').value.trim(),
-        schedule: row.querySelector('[data-field="schedule"]').value.trim(),
-        folder: row.querySelector('[data-field="folder"]').value.trim()
-    })).filter((streamer) => streamer["screen-id"] || streamer.folder || streamer.schedule);
+    const streamers = collectStreamerRows().filter((streamer) => streamer["screen-id"] || streamer.folder || streamer.schedule || streamer.password);
 
     return {
         lang: ui.langInput.value,
         enable_log: ui.enableLogInput.checked,
         streamers
     };
+}
+
+function collectStreamerRows() {
+    return Array.from(ui.streamersBody.querySelectorAll("[data-streamer-row='1']")).map((row) => ({
+        enabled: row.querySelector('[data-field="enabled"]').checked,
+        "screen-id": row.querySelector('[data-field="screen-id"]').value.trim(),
+        schedule: row.querySelector('[data-field="schedule"]').value.trim(),
+        password: row.querySelector('[data-field="password"]').value.trim(),
+        folder: row.querySelector('[data-field="folder"]').value.trim()
+    }));
 }
 
 function collectDiscordSettings() {

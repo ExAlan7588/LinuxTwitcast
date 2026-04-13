@@ -16,6 +16,7 @@ type StreamerConfig struct {
 	ScreenId string `json:"screen-id"`
 	Schedule string `json:"schedule"`
 	Folder   string `json:"folder"`
+	Password string `json:"password,omitempty"`
 	Enabled  bool   `json:"enabled"`
 }
 
@@ -141,6 +142,7 @@ func normalize(cfg *AppConfig) *AppConfig {
 			ScreenId: strings.TrimSpace(streamer.ScreenId),
 			Schedule: strings.TrimSpace(streamer.Schedule),
 			Folder:   strings.TrimSpace(streamer.Folder),
+			Password: strings.TrimSpace(streamer.Password),
 			Enabled:  streamer.Enabled,
 		})
 	}

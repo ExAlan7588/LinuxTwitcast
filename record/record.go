@@ -29,6 +29,7 @@ type Sink interface {
 type RecordConfig struct {
 	Streamer         string
 	Folder           string
+	Password         string
 	StreamUrlFetcher func(string) (string, string, string, error)
 	SinkProvider     func(RecordContext) (Sink, error)
 	StreamRecorder   func(RecordContext, chan<- []byte)
@@ -37,6 +38,7 @@ type RecordConfig struct {
 	PostProcessor    func(filename, streamerName, title string)
 	OnSessionStart   func(SessionInfo)
 	OnSessionEnd     func(SessionInfo)
+	OnStreamLookup   func(streamer string, err error)
 }
 
 type SessionInfo struct {
@@ -52,12 +54,15 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 	streamer := recordConfig.Streamer
 	return func() {
 		streamUrl, streamerName, title, err := recordConfig.StreamUrlFetcher(streamer)
+		if recordConfig.OnStreamLookup != nil {
+			recordConfig.OnStreamLookup(streamer, err)
+		}
 		if err != nil {
 			log.Printf("Error fetching stream URL for streamer [%s]: %v\n", streamer, err)
 			return
 		}
 		log.Printf("Fetched stream URL for streamer [%s]: %s\n", streamer, streamUrl)
-		recordCtx := newRecordContext(recordConfig.RootContext, streamer, streamUrl, streamerName, title, recordConfig.Folder)
+		recordCtx := newRecordContext(recordConfig.RootContext, streamer, streamUrl, streamerName, title, recordConfig.Folder, recordConfig.Password)
 
 		sink, err := recordConfig.SinkProvider(recordCtx)
 		if err != nil {

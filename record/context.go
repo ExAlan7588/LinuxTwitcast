@@ -26,6 +26,9 @@ type RecordContext interface {
 
 	// GetFolder returns the target folder for recording.
 	GetFolder() string
+
+	// GetPassword returns the optional stream password for reconnect attempts.
+	GetPassword() string
 }
 
 type recordContextImpl struct {
@@ -36,20 +39,22 @@ type recordContextImpl struct {
 type contextKey string
 
 const (
-	streamerKey      = contextKey("streamer")
-	streamUrlKey     = contextKey("streamUrl")
-	streamerNameKey  = contextKey("streamerName")
-	titleKey         = contextKey("title")
-	folderKey        = contextKey("folder")
+	streamerKey     = contextKey("streamer")
+	streamUrlKey    = contextKey("streamUrl")
+	streamerNameKey = contextKey("streamerName")
+	titleKey        = contextKey("title")
+	folderKey       = contextKey("folder")
+	passwordKey     = contextKey("password")
 )
 
-func newRecordContext(ctx context.Context, streamer, streamUrl, streamerName, title, folder string) RecordContext {
+func newRecordContext(ctx context.Context, streamer, streamUrl, streamerName, title, folder, password string) RecordContext {
 	ctx, cancelFunc := context.WithCancel(ctx)
 	ctx = context.WithValue(ctx, streamUrlKey, streamUrl)
 	ctx = context.WithValue(ctx, streamerKey, streamer)
 	ctx = context.WithValue(ctx, streamerNameKey, streamerName)
 	ctx = context.WithValue(ctx, titleKey, title)
 	ctx = context.WithValue(ctx, folderKey, folder)
+	ctx = context.WithValue(ctx, passwordKey, password)
 	return &recordContextImpl{ctx, cancelFunc}
 }
 
@@ -89,6 +94,13 @@ func (ctxImpl *recordContextImpl) GetTitle() string {
 
 func (ctxImpl *recordContextImpl) GetFolder() string {
 	if val := ctxImpl.ctx.Value(folderKey); val != nil {
+		return val.(string)
+	}
+	return ""
+}
+
+func (ctxImpl *recordContextImpl) GetPassword() string {
+	if val := ctxImpl.ctx.Value(passwordKey); val != nil {
 		return val.(string)
 	}
 	return ""

@@ -30,7 +30,19 @@ type Status struct {
 	EnabledStreamers int                  `json:"enabled_streamers"`
 	ScheduledJobs    int                  `json:"scheduled_jobs"`
 	ActiveRecordings []record.SessionInfo `json:"active_recordings"`
+	Warnings         []Warning            `json:"warnings,omitempty"`
 	LastError        string               `json:"last_error,omitempty"`
+}
+
+type Warning struct {
+	Code     string    `json:"code"`
+	Streamer string    `json:"streamer"`
+	RetryAt  time.Time `json:"retry_at,omitempty"`
+}
+
+type streamWarning struct {
+	Code    string
+	RetryAt time.Time
 }
 
 type Manager struct {
@@ -45,12 +57,16 @@ type Manager struct {
 	enabledStreamers int
 	scheduledJobs    int
 	active           map[string]record.SessionInfo
+	warnings         map[string]streamWarning
 	lastError        string
 }
 
+const passwordRetryCooldown = 2 * time.Minute
+
 func NewManager() *Manager {
 	return &Manager{
-		active: make(map[string]record.SessionInfo),
+		active:   make(map[string]record.SessionInfo),
+		warnings: make(map[string]streamWarning),
 	}
 }
 
@@ -111,28 +127,41 @@ func (m *Manager) Start() error {
 			}
 			continue
 		}
+		streamerCfg := *streamerCfg
 
 		var streamerNotifier record.DiscordNotifier
 		if notifier := discord.NewNotifierFromConfig(discordCfg, streamerCfg.ScreenId); notifier != nil {
 			streamerNotifier = notifier
 		}
 
+		recordFunc := record.ToRecordFunc(&record.RecordConfig{
+			Streamer: streamerCfg.ScreenId,
+			Folder:   streamerCfg.Folder,
+			Password: streamerCfg.Password,
+			// 直播密码按每个 streamer 独立传入；没填时会在抓流阶段返回专门的缺密码错误。
+			StreamUrlFetcher: func(streamer string) (string, string, string, error) {
+				return twitcasting.GetWSStreamUrlWithPassword(streamer, streamerCfg.Password)
+			},
+			SinkProvider:   sink.NewFileSink,
+			StreamRecorder: twitcasting.RecordWS,
+			RootContext:    rootCtx,
+			Notifier:       streamerNotifier,
+			PostProcessor: func(filename, streamerName, title string) {
+				telegram.Process(telegramCfg, filename, streamerName, title)
+			},
+			OnSessionStart: m.handleSessionStart,
+			OnSessionEnd:   m.handleSessionEnd,
+			OnStreamLookup: m.handleStreamLookup,
+		})
+
 		_, err := scheduler.AddFunc(
 			streamerCfg.Schedule,
-			record.ToRecordFunc(&record.RecordConfig{
-				Streamer:         streamerCfg.ScreenId,
-				Folder:           streamerCfg.Folder,
-				StreamUrlFetcher: twitcasting.GetWSStreamUrl,
-				SinkProvider:     sink.NewFileSink,
-				StreamRecorder:   twitcasting.RecordWS,
-				RootContext:      rootCtx,
-				Notifier:         streamerNotifier,
-				PostProcessor: func(filename, streamerName, title string) {
-					telegram.Process(telegramCfg, filename, streamerName, title)
-				},
-				OnSessionStart: m.handleSessionStart,
-				OnSessionEnd:   m.handleSessionEnd,
-			}),
+			func() {
+				if m.shouldSkipStreamer(streamerCfg.ScreenId) {
+					return
+				}
+				recordFunc()
+			},
 		)
 		if err != nil {
 			cancel()
@@ -159,6 +188,7 @@ func (m *Manager) Start() error {
 	m.enabledStreamers = config.EnabledStreamers(cfg)
 	m.scheduledJobs = scheduledJobs
 	m.active = make(map[string]record.SessionInfo)
+	m.warnings = make(map[string]streamWarning)
 	m.lastError = ""
 	m.mu.Unlock()
 
@@ -196,7 +226,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	}
 
 	log.Println("Cron jobs stopped. Waiting for background processors (Telegram/Discord) to finish...")
-	
+
 	// Wait for any background post-processors (like FFmpeg to push Telegram)
 	doneWaiting := make(chan struct{})
 	go func() {
@@ -222,6 +252,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.enabledStreamers = 0
 	m.scheduledJobs = 0
 	m.active = make(map[string]record.SessionInfo)
+	m.warnings = make(map[string]streamWarning)
 	if err != nil {
 		m.lastError = err.Error()
 	}
@@ -249,6 +280,18 @@ func (m *Manager) Status() Status {
 		return active[i].StartedAt.Before(active[j].StartedAt)
 	})
 
+	warnings := make([]Warning, 0, len(m.warnings))
+	for streamer, warning := range m.warnings {
+		warnings = append(warnings, Warning{
+			Code:     warning.Code,
+			Streamer: streamer,
+			RetryAt:  warning.RetryAt,
+		})
+	}
+	sort.Slice(warnings, func(i, j int) bool {
+		return warnings[i].Streamer < warnings[j].Streamer
+	})
+
 	status := Status{
 		Running:          m.running,
 		Stopping:         m.stopping,
@@ -257,6 +300,7 @@ func (m *Manager) Status() Status {
 		EnabledStreamers: m.enabledStreamers,
 		ScheduledJobs:    m.scheduledJobs,
 		ActiveRecordings: active,
+		Warnings:         warnings,
 		LastError:        m.lastError,
 	}
 	if m.running && !m.startedAt.IsZero() {
@@ -270,6 +314,7 @@ func (m *Manager) handleSessionStart(session record.SessionInfo) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.active[session.Streamer] = session
+	delete(m.warnings, session.Streamer)
 }
 
 func (m *Manager) handleSessionEnd(session record.SessionInfo) {
@@ -285,4 +330,30 @@ func (m *Manager) storeError(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastError = err.Error()
+}
+
+// 密码锁页会让高频排程不断重试；记录一个短冷却，避免每 5 秒都重复打目标页和刷日志。
+func (m *Manager) shouldSkipStreamer(streamer string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	warning, ok := m.warnings[streamer]
+	return ok && warning.Code == "stream_password_required" && time.Now().Before(warning.RetryAt)
+}
+
+func (m *Manager) handleStreamLookup(streamer string, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	switch {
+	case err == nil:
+		delete(m.warnings, streamer)
+	case errors.Is(err, twitcasting.ErrPasswordRequired):
+		m.warnings[streamer] = streamWarning{
+			Code:    "stream_password_required",
+			RetryAt: time.Now().Add(passwordRetryCooldown),
+		}
+	case errors.Is(err, twitcasting.ErrStreamOffline):
+		delete(m.warnings, streamer)
+	}
 }

@@ -14,8 +14,8 @@ import (
 var (
 	wsReconnectGracePeriod   = 2 * time.Minute
 	wsReconnectRetryInterval = 2 * time.Second
-	wsReconnectURLFetcher    = func(streamer string) (string, error) {
-		streamURL, _, _, err := GetWSStreamUrl(streamer)
+	wsReconnectURLFetcher    = func(streamer, password string) (string, error) {
+		streamURL, _, _, err := GetWSStreamUrlWithPassword(streamer, password)
 		return streamURL, err
 	}
 )
@@ -111,6 +111,7 @@ func newRecordingSocket(recordCtx record.RecordContext, streamURL string, sinkCh
 
 func waitForReconnectURL(recordCtx record.RecordContext, streamer string, disconnectErr error) (string, error) {
 	deadline := time.Now().Add(wsReconnectGracePeriod)
+	password := recordCtx.GetPassword()
 	log.Printf("Stream [%s] disconnected, waiting up to %s for reconnect: %v\n", streamer, wsReconnectGracePeriod, disconnectErr)
 
 	for {
@@ -118,7 +119,7 @@ func waitForReconnectURL(recordCtx record.RecordContext, streamer string, discon
 			return "", recordCtx.Err()
 		}
 
-		streamURL, err := wsReconnectURLFetcher(streamer)
+		streamURL, err := wsReconnectURLFetcher(streamer, password)
 		if err == nil {
 			log.Printf("Stream [%s] reconnected within grace period\n", streamer)
 			return streamURL, nil

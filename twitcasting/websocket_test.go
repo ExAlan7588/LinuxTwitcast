@@ -11,6 +11,7 @@ type stubRecordContext struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	streamer string
+	password string
 }
 
 func newStubRecordContext(streamer string) *stubRecordContext {
@@ -32,6 +33,9 @@ func (s *stubRecordContext) GetStreamerName() string {
 }
 func (s *stubRecordContext) GetTitle() string  { return "" }
 func (s *stubRecordContext) GetFolder() string { return "" }
+func (s *stubRecordContext) GetPassword() string {
+	return s.password
+}
 
 func TestWaitForReconnectURLRetriesWithinGracePeriod(t *testing.T) {
 	originalGrace := wsReconnectGracePeriod
@@ -47,7 +51,7 @@ func TestWaitForReconnectURLRetriesWithinGracePeriod(t *testing.T) {
 	wsReconnectRetryInterval = 10 * time.Millisecond
 
 	attempts := 0
-	wsReconnectURLFetcher = func(streamer string) (string, error) {
+	wsReconnectURLFetcher = func(streamer, password string) (string, error) {
 		attempts++
 		if attempts < 3 {
 			return "", errors.New("temporary disconnect")
@@ -80,7 +84,7 @@ func TestWaitForReconnectURLTimesOutAfterGracePeriod(t *testing.T) {
 
 	wsReconnectGracePeriod = 35 * time.Millisecond
 	wsReconnectRetryInterval = 10 * time.Millisecond
-	wsReconnectURLFetcher = func(streamer string) (string, error) {
+	wsReconnectURLFetcher = func(streamer, password string) (string, error) {
 		return "", errors.New("still offline")
 	}
 

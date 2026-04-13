@@ -1,7 +1,10 @@
 package twitcasting
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -25,8 +28,20 @@ var httpClient = &http.Client{
 	Timeout: requestTimeout,
 }
 
+var (
+	ErrStreamOffline    = errors.New("live stream is offline")
+	ErrPasswordRequired = errors.New("live stream requires a password")
+)
+
 func GetWSStreamUrl(streamer string) (string, string, string, error) {
-	streamerName, title := fetchStreamInfo(streamer)
+	return GetWSStreamUrlWithPassword(streamer, "")
+}
+
+func GetWSStreamUrlWithPassword(streamer, password string) (string, string, string, error) {
+	streamerName, title, passwordRequired := fetchStreamInfo(streamer)
+	if passwordRequired && strings.TrimSpace(password) == "" {
+		return "", streamerName, title, ErrPasswordRequired
+	}
 
 	u, _ := url.Parse(apiEndpoint)
 	q := u.Query()
@@ -55,12 +70,12 @@ func GetWSStreamUrl(streamer string) (string, string, string, error) {
 
 	// Try to get URL directly
 	if streamUrl, err := getDirectStreamUrl(jq); err == nil {
-		return streamUrl, streamerName, title, nil
+		return appendPasswordToken(streamUrl, password), streamerName, title, nil
 	}
 
 	log.Printf("Direct Stream URL for streamer [%s] not available in the API response; fallback to default URL\n", streamer)
 	fallbackUrl, fallbackErr := fallbackStreamUrl(jq)
-	return fallbackUrl, streamerName, title, fallbackErr
+	return appendPasswordToken(fallbackUrl, password), streamerName, title, fallbackErr
 }
 
 func checkStreamOnline(jq *jsonq.JsonQuery) error {
@@ -68,7 +83,7 @@ func checkStreamOnline(jq *jsonq.JsonQuery) error {
 	if err != nil {
 		return fmt.Errorf("error checking stream online status: %w", err)
 	} else if !isLive {
-		return fmt.Errorf("live stream is offline")
+		return ErrStreamOffline
 	}
 	return nil
 }
@@ -132,7 +147,7 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
-func fetchStreamInfo(streamer string) (streamerName string, title string) {
+func fetchStreamInfo(streamer string) (streamerName string, title string, passwordRequired bool) {
 	streamerName = streamer // fallback
 	title = ""              // fallback
 
@@ -153,6 +168,7 @@ func fetchStreamInfo(streamer string) (streamerName string, title string) {
 		return
 	}
 	bodyStr := string(bodyBytes)
+	passwordRequired = requiresStreamPassword(bodyStr)
 
 	// --- Extract streamer display name ---
 	// TwitCasting <title> when live: "STREAM_TITLE - NAME (@screen-id) - Twitcast"
@@ -209,5 +225,33 @@ func fetchStreamInfo(streamer string) (streamerName string, title string) {
 		}
 	}
 
-	return sanitizeFilename(streamerName), sanitizeFilename(title)
+	return sanitizeFilename(streamerName), sanitizeFilename(title), passwordRequired
+}
+
+// 锁页会显示专门的空状态和 password 表单；先在这里拦下，避免无密码时反复尝试启动录影。
+func requiresStreamPassword(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "tw-player-page-lock-empty-state") &&
+		strings.Contains(lower, `name="password"`)
+}
+
+func appendPasswordToken(streamURL, password string) string {
+	if strings.TrimSpace(streamURL) == "" || strings.TrimSpace(password) == "" {
+		return streamURL
+	}
+
+	parsed, err := url.Parse(streamURL)
+	if err != nil {
+		return streamURL
+	}
+
+	query := parsed.Query()
+	query.Set("word", md5Hex(strings.TrimSpace(password)))
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func md5Hex(text string) string {
+	sum := md5.Sum([]byte(text))
+	return hex.EncodeToString(sum[:])
 }
