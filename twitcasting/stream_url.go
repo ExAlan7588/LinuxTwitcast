@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/jsonq"
+
+	"github.com/jzhang046/croned-twitcasting-recorder/record"
 )
 
 const (
@@ -33,14 +36,26 @@ var (
 	ErrPasswordRequired = errors.New("live stream requires a password")
 )
 
-func GetWSStreamUrl(streamer string) (string, string, string, error) {
+type streamPageInfo struct {
+	streamerName     string
+	title            string
+	avatarURL        string
+	passwordRequired bool
+}
+
+func GetWSStreamUrl(streamer string) (record.StreamLookupResult, error) {
 	return GetWSStreamUrlWithPassword(streamer, "")
 }
 
-func GetWSStreamUrlWithPassword(streamer, password string) (string, string, string, error) {
-	streamerName, title, passwordRequired := fetchStreamInfo(streamer)
-	if passwordRequired && strings.TrimSpace(password) == "" {
-		return "", streamerName, title, ErrPasswordRequired
+func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupResult, error) {
+	pageInfo := fetchStreamInfo(streamer)
+	result := record.StreamLookupResult{
+		StreamerName: pageInfo.streamerName,
+		Title:        pageInfo.title,
+		AvatarURL:    pageInfo.avatarURL,
+	}
+	if pageInfo.passwordRequired && strings.TrimSpace(password) == "" {
+		return result, ErrPasswordRequired
 	}
 
 	u, _ := url.Parse(apiEndpoint)
@@ -54,28 +69,30 @@ func GetWSStreamUrlWithPassword(streamer, password string) (string, string, stri
 	request.Header.Set("Referer", fmt.Sprint(baseDomain, "/", streamer))
 	response, err := httpClient.Do(request)
 	if err != nil {
-		return "", streamerName, title, fmt.Errorf("requesting stream info failed: %w", err)
+		return result, fmt.Errorf("requesting stream info failed: %w", err)
 	}
 	defer response.Body.Close()
 
 	responseData := map[string]interface{}{}
 	if err = json.NewDecoder(response.Body).Decode(&responseData); err != nil {
-		return "", streamerName, title, err
+		return result, err
 	}
 	jq := jsonq.NewQuery(responseData)
 
 	if err = checkStreamOnline(jq); err != nil {
-		return "", streamerName, title, err
+		return result, err
 	}
 
 	// Try to get URL directly
 	if streamUrl, err := getDirectStreamUrl(jq); err == nil {
-		return appendPasswordToken(streamUrl, password), streamerName, title, nil
+		result.StreamURL = appendPasswordToken(streamUrl, password)
+		return result, nil
 	}
 
 	log.Printf("Direct Stream URL for streamer [%s] not available in the API response; fallback to default URL\n", streamer)
 	fallbackUrl, fallbackErr := fallbackStreamUrl(jq)
-	return appendPasswordToken(fallbackUrl, password), streamerName, title, fallbackErr
+	result.StreamURL = appendPasswordToken(fallbackUrl, password)
+	return result, fallbackErr
 }
 
 func checkStreamOnline(jq *jsonq.JsonQuery) error {
@@ -147,52 +164,60 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
-func fetchStreamInfo(streamer string) (streamerName string, title string, passwordRequired bool) {
-	streamerName = streamer // fallback
-	title = ""              // fallback
-
+func fetchStreamInfo(streamer string) streamPageInfo {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprint(baseDomain, "/", streamer), nil)
 	if err != nil {
-		return
+		return streamPageInfo{streamerName: streamer}
 	}
 	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return
+		return streamPageInfo{streamerName: streamer}
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return
+		return streamPageInfo{streamerName: streamer}
 	}
-	bodyStr := string(bodyBytes)
-	passwordRequired = requiresStreamPassword(bodyStr)
+	return parseStreamPageInfo(streamer, string(bodyBytes))
+}
+
+func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
+	info := streamPageInfo{
+		streamerName: streamer,
+		title:        "",
+	}
+	info.passwordRequired = requiresStreamPassword(bodyStr)
 
 	// --- Extract streamer display name ---
 	// TwitCasting <title> when live: "STREAM_TITLE - NAME (@screen-id) - Twitcast"
 	// TwitCasting <title> when offline: "NAME (@screen-id) 's Live - Twitcast"
-	// The most reliable pattern is "NAME (@screen-id)" inside the <title>.
-	nameFromTitleRegex := regexp.MustCompile(`(?i)([^<>]+?)\s*\(@` + regexp.QuoteMeta(streamer) + `\)`)
 	titleTagRegex := regexp.MustCompile(`<title>(.*?)</title>`)
 	titleMatches := titleTagRegex.FindStringSubmatch(bodyStr)
 	if len(titleMatches) > 1 {
 		rawTitle := titleMatches[1]
-		nameMatch := nameFromTitleRegex.FindStringSubmatch(rawTitle)
-		if len(nameMatch) > 1 {
-			streamerName = strings.TrimSpace(nameMatch[1])
+		liveTitleRegex := regexp.MustCompile(`(?is)^(.*?)\s+-\s+(.+?)\s*\(@` + regexp.QuoteMeta(streamer) + `\)`)
+		if liveMatch := liveTitleRegex.FindStringSubmatch(rawTitle); len(liveMatch) > 2 {
+			info.title = strings.TrimSpace(liveMatch[1])
+			info.streamerName = strings.TrimSpace(liveMatch[2])
+		} else {
+			offlineNameRegex := regexp.MustCompile(`(?is)^(.+?)\s*\(@` + regexp.QuoteMeta(streamer) + `\)`)
+			if nameMatch := offlineNameRegex.FindStringSubmatch(rawTitle); len(nameMatch) > 1 {
+				info.streamerName = strings.TrimSpace(nameMatch[1])
+			}
 		}
 	}
 
 	// Fallback: try <meta name="author"> for streamer name
-	if streamerName == streamer {
+	if info.streamerName == streamer {
 		authorRegex := regexp.MustCompile(`<meta\s+name="author"\s+content="([^"]+)"`)
 		authorMatch := authorRegex.FindStringSubmatch(bodyStr)
 		if len(authorMatch) > 1 {
 			candidate := strings.TrimSpace(authorMatch[1])
 			if candidate != "" && !strings.EqualFold(candidate, "twitcasting") {
-				streamerName = candidate
+				info.streamerName = candidate
 			}
 		}
 	}
@@ -206,26 +231,73 @@ func fetchStreamInfo(streamer string) (streamerName string, title string, passwo
 		candidate := strings.TrimSpace(twitterTitleMatch[1])
 		// Only use it as the stream title if it doesn't look like the full page title
 		if candidate != "" && !strings.Contains(candidate, "@"+streamer) {
-			title = candidate
+			info.title = candidate
 		}
 	}
 
 	// Fallback: try to extract stream title from <title> tag
 	// Pattern: "STREAM_TITLE - NAME (@screen-id)"
-	if title == "" && len(titleMatches) > 1 {
+	if info.title == "" && len(titleMatches) > 1 {
 		rawTitle := titleMatches[1]
 		// If the raw title contains " - NAME", the part before it is the stream title
-		if streamerName != streamer && strings.Contains(rawTitle, " - "+streamerName) {
-			parts := strings.SplitN(rawTitle, " - "+streamerName, 2)
+		if info.streamerName != streamer && strings.Contains(rawTitle, " - "+info.streamerName) {
+			parts := strings.SplitN(rawTitle, " - "+info.streamerName, 2)
 			candidate := strings.TrimSpace(parts[0])
 			// Don't treat the streamer name line itself as a title
-			if candidate != "" && candidate != streamerName {
-				title = candidate
+			if candidate != "" && candidate != info.streamerName {
+				info.title = candidate
 			}
 		}
 	}
 
-	return sanitizeFilename(streamerName), sanitizeFilename(title), passwordRequired
+	// 直播页里同时有直播缩图和主播头像；这里优先取 og:image，确保 Discord 右上角显示的是大头贴。
+	info.avatarURL = extractAvatarURL(bodyStr)
+	info.streamerName = sanitizeFilename(info.streamerName)
+	info.title = sanitizeFilename(info.title)
+	return info
+}
+
+func extractAvatarURL(body string) string {
+	for _, target := range []struct {
+		attr string
+		name string
+	}{
+		{attr: "property", name: "og:image"},
+		{attr: "name", name: "twitter:image"},
+	} {
+		if candidate := extractMetaContent(body, target.attr, target.name); candidate != "" {
+			return normalizeImageURL(candidate)
+		}
+	}
+	return ""
+}
+
+func extractMetaContent(body, attr, name string) string {
+	quotedName := regexp.QuoteMeta(name)
+	patterns := []string{
+		fmt.Sprintf(`(?is)<meta[^>]+\b%s=["']%s["'][^>]+\bcontent=["']([^"'<>]+)["']`, attr, quotedName),
+		fmt.Sprintf(`(?is)<meta[^>]+\bcontent=["']([^"'<>]+)["'][^>]+\b%s=["']%s["']`, attr, quotedName),
+	}
+	for _, pattern := range patterns {
+		match := regexp.MustCompile(pattern).FindStringSubmatch(body)
+		if len(match) > 1 {
+			return strings.TrimSpace(html.UnescapeString(match[1]))
+		}
+	}
+	return ""
+}
+
+func normalizeImageURL(raw string) string {
+	candidate := strings.TrimSpace(html.UnescapeString(raw))
+	lower := strings.ToLower(candidate)
+	switch {
+	case strings.HasPrefix(candidate, "//"):
+		return "https:" + candidate
+	case strings.HasPrefix(lower, "http://"):
+		return "https://" + candidate[len("http://"):]
+	default:
+		return candidate
+	}
 }
 
 // 锁页会显示专门的空状态和 password 表单；先在这里拦下，避免无密码时反复尝试启动录影。

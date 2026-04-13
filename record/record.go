@@ -16,8 +16,8 @@ var (
 // DiscordNotifier is the interface the record package calls to send notifications.
 // The discord package's Notifier satisfies this interface.
 type DiscordNotifier interface {
-	NotifyStart(streamerName, streamTitle string)
-	NotifyEnd(streamerName, streamTitle string)
+	NotifyStart(session SessionInfo)
+	NotifyEnd(session SessionInfo)
 }
 
 type Sink interface {
@@ -30,7 +30,7 @@ type RecordConfig struct {
 	Streamer         string
 	Folder           string
 	Password         string
-	StreamUrlFetcher func(string) (string, string, string, error)
+	StreamUrlFetcher func(string) (StreamLookupResult, error)
 	SinkProvider     func(RecordContext) (Sink, error)
 	StreamRecorder   func(RecordContext, chan<- []byte)
 	RootContext      context.Context
@@ -41,10 +41,18 @@ type RecordConfig struct {
 	OnStreamLookup   func(streamer string, err error)
 }
 
+type StreamLookupResult struct {
+	StreamURL    string
+	StreamerName string
+	Title        string
+	AvatarURL    string
+}
+
 type SessionInfo struct {
 	Streamer     string    `json:"streamer"`
 	StreamerName string    `json:"streamer_name"`
 	Title        string    `json:"title"`
+	AvatarURL    string    `json:"avatar_url,omitempty"`
 	Filename     string    `json:"filename"`
 	StartedAt    time.Time `json:"started_at"`
 	EndedAt      time.Time `json:"ended_at,omitempty"`
@@ -53,7 +61,7 @@ type SessionInfo struct {
 func ToRecordFunc(recordConfig *RecordConfig) func() {
 	streamer := recordConfig.Streamer
 	return func() {
-		streamUrl, streamerName, title, err := recordConfig.StreamUrlFetcher(streamer)
+		lookup, err := recordConfig.StreamUrlFetcher(streamer)
 		if recordConfig.OnStreamLookup != nil {
 			recordConfig.OnStreamLookup(streamer, err)
 		}
@@ -61,8 +69,8 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 			log.Printf("Error fetching stream URL for streamer [%s]: %v\n", streamer, err)
 			return
 		}
-		log.Printf("Fetched stream URL for streamer [%s]: %s\n", streamer, streamUrl)
-		recordCtx := newRecordContext(recordConfig.RootContext, streamer, streamUrl, streamerName, title, recordConfig.Folder, recordConfig.Password)
+		log.Printf("Fetched stream URL for streamer [%s]: %s\n", streamer, lookup.StreamURL)
+		recordCtx := newRecordContext(recordConfig.RootContext, streamer, lookup.StreamURL, lookup.StreamerName, lookup.Title, recordConfig.Folder, recordConfig.Password)
 
 		sink, err := recordConfig.SinkProvider(recordCtx)
 		if err != nil {
@@ -72,8 +80,9 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 
 		session := SessionInfo{
 			Streamer:     streamer,
-			StreamerName: streamerName,
-			Title:        title,
+			StreamerName: lookup.StreamerName,
+			Title:        lookup.Title,
+			AvatarURL:    lookup.AvatarURL,
 			Filename:     sink.Filename(),
 			StartedAt:    time.Now(),
 		}
@@ -86,7 +95,7 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 
 		// Notify Discord that recording has started
 		if recordConfig.Notifier != nil {
-			recordConfig.Notifier.NotifyStart(streamerName, title)
+			recordConfig.Notifier.NotifyStart(session)
 		}
 
 		recordConfig.StreamRecorder(recordCtx, sink.Chan())
@@ -96,7 +105,7 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 
 		// Notify Discord that recording has ended
 		if recordConfig.Notifier != nil {
-			recordConfig.Notifier.NotifyEnd(streamerName, title)
+			recordConfig.Notifier.NotifyEnd(session)
 		}
 		if recordConfig.OnSessionEnd != nil {
 			session.EndedAt = time.Now()
@@ -109,7 +118,7 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 			go func() {
 				defer BackgroundProcessorWg.Done()
 				state.Update(streamer, "processing")
-				recordConfig.PostProcessor(sink.Filename(), streamerName, title)
+				recordConfig.PostProcessor(sink.Filename(), session.StreamerName, session.Title)
 				// Clear state when post-processor completely finishes
 				state.Clear(streamer)
 			}()

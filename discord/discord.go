@@ -7,14 +7,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jzhang046/croned-twitcasting-recorder/record"
 )
 
 var discordAPI = "https://discord.com/api/v10"
 
 const (
 	updateInterval = 30 * time.Second
-	colorGreen     = 0x2ecc71
-	colorGray      = 0x95a5a6
+	colorLive      = 0x00a5f9
+	colorArchive   = 0x95a5a6
+	twitcastIcon   = "https://ja.twitcasting.tv/img/icon192.png"
 )
 
 // Notifier handles Discord notifications for a single recording session.
@@ -139,43 +142,67 @@ type rolePayload struct {
 
 // ── Embed builders ───────────────────────────────────────────────────────────
 
-func buildStartEmbed(title, screenID string, elapsed time.Duration) embed {
-	streamURL := "https://twitcasting.tv/" + screenID
-	// Optional: we can use a generic twitcast icon or no thumbnail. Let's make it clean.
+func buildStartEmbed(session record.SessionInfo, elapsed time.Duration) embed {
+	streamURL := buildStreamURL(session.Streamer)
 	return embed{
-		Title: title,
-		Url:   streamURL,
-		Color: 0x00A5F9, // A vibrant TwitCasting-ish blue color (0x00a5f9) instead of basic green
-		Author: &author{
-			Name:    "TwitCasting 直播監視器",
-			IconUrl: "https://ja.twitcasting.tv/img/icon192.png",
-		},
+		Title:     FormatTitle(session.StreamerName, session.Title),
+		Url:       streamURL,
+		Color:     colorLive,
+		Author:    buildEmbedAuthor(session, streamURL),
+		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
 		Fields: []field{
-			{Name: "狀態標籤", Value: "🔴 **正在錄影中...**", Inline: true},
-			{Name: "檔案時長", Value: fmt.Sprintf("⏱️ **%s**（持續更新）", formatDuration(elapsed)), Inline: true},
+			{Name: "直播狀態", Value: "🔴 **正在錄影中**", Inline: true},
+			{Name: "錄影時長", Value: fmt.Sprintf("⏱️ **%s**（持續更新）", formatDuration(elapsed)), Inline: true},
+			{Name: "直播頁面", Value: fmt.Sprintf("[點我前往直播間](%s)", streamURL), Inline: false},
 		},
-		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統"},
+		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
-func buildEndEmbed(title, screenID string, elapsed time.Duration) embed {
-	streamURL := "https://twitcasting.tv/" + screenID
+func buildEndEmbed(session record.SessionInfo, elapsed time.Duration) embed {
+	streamURL := buildStreamURL(session.Streamer)
 	return embed{
-		Title: title,
-		Url:   streamURL,
-		Color: 0x95A5A6, // Gray
-		Author: &author{
-			Name:    "TwitCasting 直播歸檔",
-			IconUrl: "https://ja.twitcasting.tv/img/icon192.png",
-		},
+		Title:     FormatTitle(session.StreamerName, session.Title),
+		Url:       streamURL,
+		Color:     colorArchive,
+		Author:    buildEmbedAuthor(session, streamURL),
+		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
 		Fields: []field{
-			{Name: "狀態標籤", Value: "⏹️ **錄影已結束**", Inline: true},
-			{Name: "總時長", Value: fmt.Sprintf("⏱️ **%s**", formatDuration(elapsed)), Inline: true},
+			{Name: "直播狀態", Value: "⏹️ **錄影已結束**", Inline: true},
+			{Name: "總錄影時長", Value: fmt.Sprintf("⏱️ **%s**", formatDuration(elapsed)), Inline: true},
+			{Name: "直播頁面", Value: fmt.Sprintf("[點我查看直播主頁](%s)", streamURL), Inline: false},
 		},
-		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統"},
+		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
+}
+
+func buildStreamURL(screenID string) string {
+	return "https://twitcasting.tv/" + screenID
+}
+
+func buildEmbedAuthor(session record.SessionInfo, streamURL string) *author {
+	return &author{
+		Name:    formatAuthorName(session),
+		Url:     streamURL,
+		IconUrl: twitcastIcon,
+	}
+}
+
+func buildEmbedThumbnail(avatarURL string) *image {
+	if strings.TrimSpace(avatarURL) == "" {
+		return nil
+	}
+	return &image{Url: avatarURL}
+}
+
+func formatAuthorName(session record.SessionInfo) string {
+	name := strings.TrimSpace(session.StreamerName)
+	if name == "" || name == session.Streamer {
+		return "@" + session.Streamer
+	}
+	return fmt.Sprintf("%s (@%s)", name, session.Streamer)
 }
 
 // ── Notifier internal helpers ────────────────────────────────────────────────
@@ -253,7 +280,7 @@ func (n *Notifier) deleteMessage(channelID, messageID string) error {
 
 // NotifyStart sends the initial "recording started" notification and begins
 // periodic duration updates.
-func (n *Notifier) NotifyStart(streamerName, streamTitle string) {
+func (n *Notifier) NotifyStart(session record.SessionInfo) {
 	if n == nil {
 		return
 	}
@@ -261,10 +288,9 @@ func (n *Notifier) NotifyStart(streamerName, streamTitle string) {
 	defer n.mu.Unlock()
 
 	n.startTime = time.Now()
-	title := FormatTitle(streamerName, streamTitle)
 	mention := n.roleMentionContent()
 
-	e := buildStartEmbed(title, n.screenID, 0)
+	e := buildStartEmbed(session, 0)
 	msgID, err := n.sendMessageToChannel(n.notifyChannelID, mention, e)
 	if err != nil {
 		log.Printf("[Discord] Failed to send start notification: %v\n", err)
@@ -291,7 +317,7 @@ func (n *Notifier) NotifyStart(streamerName, streamTitle string) {
 				if mID == "" {
 					return
 				}
-				updated := buildStartEmbed(title, n.screenID, elapsed)
+				updated := buildStartEmbed(session, elapsed)
 				if err := n.editMessage(n.notifyChannelID, mID, updated); err != nil {
 					log.Printf("[Discord] Failed to update duration: %v\n", err)
 				}
@@ -303,7 +329,7 @@ func (n *Notifier) NotifyStart(streamerName, streamTitle string) {
 }
 
 // NotifyEnd stops the update loop, archives the ended embed, then deletes the original message.
-func (n *Notifier) NotifyEnd(streamerName, streamTitle string) {
+func (n *Notifier) NotifyEnd(session record.SessionInfo) {
 	if n == nil {
 		return
 	}
@@ -318,8 +344,7 @@ func (n *Notifier) NotifyEnd(streamerName, streamTitle string) {
 	defer n.mu.Unlock()
 
 	elapsed := time.Since(n.startTime)
-	title := FormatTitle(streamerName, streamTitle)
-	endEmbed := buildEndEmbed(title, n.screenID, elapsed)
+	endEmbed := buildEndEmbed(session, elapsed)
 	originalMsgID := n.messageID
 
 	// Remove from the global message map before deleting the message

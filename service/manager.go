@@ -139,7 +139,7 @@ func (m *Manager) Start() error {
 			Folder:   streamerCfg.Folder,
 			Password: streamerCfg.Password,
 			// 直播密码按每个 streamer 独立传入；没填时会在抓流阶段返回专门的缺密码错误。
-			StreamUrlFetcher: func(streamer string) (string, string, string, error) {
+			StreamUrlFetcher: func(streamer string) (record.StreamLookupResult, error) {
 				return twitcasting.GetWSStreamUrlWithPassword(streamer, streamerCfg.Password)
 			},
 			SinkProvider:   sink.NewFileSink,

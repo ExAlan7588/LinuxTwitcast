@@ -15,8 +15,8 @@ var (
 	wsReconnectGracePeriod   = 2 * time.Minute
 	wsReconnectRetryInterval = 2 * time.Second
 	wsReconnectURLFetcher    = func(streamer, password string) (string, error) {
-		streamURL, _, _, err := GetWSStreamUrlWithPassword(streamer, password)
-		return streamURL, err
+		lookup, err := GetWSStreamUrlWithPassword(streamer, password)
+		return lookup.StreamURL, err
 	}
 )
 
