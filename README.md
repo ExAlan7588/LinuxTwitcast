@@ -20,7 +20,8 @@ This repository is a modified fork of the original open-source project:
 
 - Original upstream: https://github.com/jzhang046/croned-twitcasting-recorder
 
-For Telegram users who want to point `telegram.json` at a local Bot API server instead of `https://api.telegram.org`, see:
+By default, this fork talks to the official Telegram Bot API at `https://api.telegram.org`.
+If you manually change the Telegram API endpoint to a local Bot API server, see:
 
 - Telegram Bot API server: https://github.com/tdlib/telegram-bot-api
 
@@ -50,19 +51,27 @@ Recommended baseline:
 - `ffmpeg`
 - a process supervisor such as `pm2` or `systemd`
 
+## Before You Start
+
+If you are a beginner, install these first:
+
+- `git` so you can clone and pull updates
+- `go` so you can build `twitcast_bot`
+- `ffmpeg` if you want Telegram audio extraction
+
+On Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y git golang-go ffmpeg
+```
+
 ## Install
 
 ```bash
 git clone https://github.com/ExAlan7588/LinuxTwitcast.git
 cd LinuxTwitcast
 go build -o twitcast_bot .
-```
-
-On Ubuntu:
-
-```bash
-sudo apt update
-sudo apt install -y golang-go ffmpeg
 ```
 
 More deployment notes: [docs/ubuntu-vps.md](docs/ubuntu-vps.md)
@@ -74,11 +83,13 @@ If you are new to Linux or self-hosting, use this order and do not skip steps:
 1. Install Ubuntu packages.
 2. Clone this repository.
 3. Build `twitcast_bot`.
-4. Start the web console with a username and password.
-5. Open the web console in your browser or through your reverse proxy.
-6. Fill in `config.json`, `discord.json`, and `telegram.json` from the web console.
-7. Save settings.
-8. Start the recorder.
+4. Choose your own web console username and password.
+5. Start the web console with that username and password.
+6. Open the web console in your browser or through your reverse proxy.
+7. Fill in the frontend sections:
+   `General & Streamer Settings`, `Discord Notifications`, and `Telegram & Conversion`.
+8. Click `Save Settings`.
+9. Start the recorder.
 
 Minimal first-time setup:
 
@@ -92,6 +103,9 @@ TWITCAST_WEB_USERNAME=admin \
 TWITCAST_WEB_PASSWORD='change-this-now' \
 ./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
 ```
+
+`admin` and `change-this-now` are only examples.
+You must replace them with your own username and password.
 
 Then open:
 
@@ -139,6 +153,9 @@ $env:TWITCAST_WEB_USERNAME = "admin"
 $env:TWITCAST_WEB_PASSWORD = "change-this-now"
 .\twitcast_bot.exe web --addr 127.0.0.1:8080 --auto-start
 ```
+
+Again, those two values are examples only.
+Use your own username and your own password.
 
 Then open:
 
@@ -198,6 +215,12 @@ The recorder reads these files from the working directory:
 
 The web console edits the same files, so browser changes and CLI runs stay in sync.
 
+Beginner note:
+
+- If you use the frontend, you usually do **not** need to edit these files by hand.
+- Fill in the sections in the web page and click `Save Settings`.
+- The program will write those values into the files for you.
+
 ## Discord Bot Setup
 
 LinuxTwitcast uses Discord in two separate ways:
@@ -205,9 +228,13 @@ LinuxTwitcast uses Discord in two separate ways:
 1. Send or edit live notification messages in channels.
 2. Optionally register message context-menu commands and assign per-streamer roles for subscribe / unsubscribe flows.
 
-### Required OAuth2 Scopes
+### Discord Invite Checkboxes (Scopes)
 
-When inviting the bot, include:
+If the word `Scopes` is confusing, treat it as:
+
+- the checkboxes you tick on the Discord bot invite page
+
+For this project, tick:
 
 - `bot`
 - `applications.commands`
@@ -257,6 +284,12 @@ This project currently identifies to Discord Gateway with `intents: 0`, so the c
 - [discord/gateway.go](</o:/Cursor AI/LinuxTwitcast/discord/gateway.go:162>)
 
 ## Telegram Notes
+
+Default behavior:
+
+- you do **not** need a local Telegram Bot API server
+- the default API endpoint is `https://api.telegram.org`
+- only switch to a local Bot API server if you intentionally change the API endpoint
 
 If Telegram upload is enabled:
 

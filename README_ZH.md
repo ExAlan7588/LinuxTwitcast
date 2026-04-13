@@ -22,7 +22,8 @@ Web 管理頁可處理：
 
 - 原始上游： https://github.com/jzhang046/croned-twitcasting-recorder
 
-如果你想把 `telegram.json` 的 `api_endpoint` 指到本地 Telegram Bot API 服務，而不是官方 `https://api.telegram.org`，可參考：
+這個 fork 預設連的是官方 Telegram Bot API：`https://api.telegram.org`。
+只有在你自己手動把 Telegram API 位址改成本地服務時，才需要參考：
 
 - Telegram Bot API server： https://github.com/tdlib/telegram-bot-api
 
@@ -52,19 +53,30 @@ Web 管理頁可處理：
 - `ffmpeg`
 - `pm2` 或 `systemd` 之類的常駐程序管理工具
 
+## 開始前先裝這些
+
+如果你是新手，先把這三樣裝好：
+
+- `git`
+  用來 `clone` 專案與之後 `pull` 更新
+- `go`
+  用來 build `twitcast_bot`
+- `ffmpeg`
+  如果你要用 Telegram 音訊轉檔，這個一定要有
+
+Ubuntu 可以直接打：
+
+```bash
+sudo apt update
+sudo apt install -y git golang-go ffmpeg
+```
+
 ## 安裝
 
 ```bash
 git clone https://github.com/ExAlan7588/LinuxTwitcast.git
 cd LinuxTwitcast
 go build -o twitcast_bot .
-```
-
-Ubuntu 可先安裝：
-
-```bash
-sudo apt update
-sudo apt install -y golang-go ffmpeg
 ```
 
 更多部署細節可看：[docs/ubuntu-vps.md](docs/ubuntu-vps.md)
@@ -76,11 +88,15 @@ sudo apt install -y golang-go ffmpeg
 1. 先安裝 Ubuntu 套件
 2. clone 這個 repo
 3. build `twitcast_bot`
-4. 用帳號密碼啟動 Web 管理頁
-5. 在瀏覽器打開管理頁
-6. 在管理頁填好 `config.json`、`discord.json`、`telegram.json`
-7. 按儲存
-8. 啟動 recorder
+4. 先自己決定一組前端登入帳號密碼
+5. 用這組帳號密碼啟動 Web 管理頁
+6. 在瀏覽器打開管理頁
+7. 在前端頁面的這三個區塊填資料：
+   `General & Streamer Settings`
+   `Discord Notifications`
+   `Telegram & Conversion`
+8. 按 `Save Settings`
+9. 啟動 recorder
 
 最小可用流程：
 
@@ -94,6 +110,9 @@ TWITCAST_WEB_USERNAME=admin \
 TWITCAST_WEB_PASSWORD='change-this-now' \
 ./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
 ```
+
+這裡的 `admin` 與 `change-this-now` 只是示範值。
+你要自己換成你想用的帳號與密碼。
 
 接著打開：
 
@@ -141,6 +160,8 @@ $env:TWITCAST_WEB_USERNAME = "admin"
 $env:TWITCAST_WEB_PASSWORD = "change-this-now"
 .\twitcast_bot.exe web --addr 127.0.0.1:8080 --auto-start
 ```
+
+這兩個值同樣只是示範，不是系統自動給你的固定帳密。
 
 接著打開：
 
@@ -200,6 +221,12 @@ Web mode 正確使用的旗標是 `--addr`。
 
 Web 管理頁也是直接編輯這三個檔案，所以網頁與 CLI 會共用同一份設定。
 
+新手可以這樣理解：
+
+- 如果你是用前端管理頁，通常不需要自己手改這三個檔
+- 你只要在前端區塊填資料，然後按 `Save Settings`
+- 程式會幫你把資料寫進對應檔案
+
 ## Discord Bot 權限說明
 
 LinuxTwitcast 在 Discord 內主要做兩件事：
@@ -207,9 +234,13 @@ LinuxTwitcast 在 Discord 內主要做兩件事：
 1. 發送、更新、刪除直播通知訊息
 2. 需要時註冊右鍵選單指令，並用每個直播主對應的身分組做訂閱 / 取消訂閱
 
-### 邀請 Bot 時需要的 OAuth2 Scopes
+### Discord 邀請頁上要勾選的項目（Scopes）
 
-請至少勾選：
+如果你看不懂 `Scopes`，你可以直接把它理解成：
+
+- Discord Bot 邀請頁上要勾的選項
+
+這個專案至少要勾：
 
 - `bot`
 - `applications.commands`
@@ -259,6 +290,12 @@ LinuxTwitcast 在 Discord 內主要做兩件事：
 - [discord/gateway.go](</o:/Cursor AI/LinuxTwitcast/discord/gateway.go:162>)
 
 ## Telegram 補充
+
+預設行為先講清楚：
+
+- 你 **不需要** 先架本地 Telegram Bot API 服務
+- 專案預設會連 `https://api.telegram.org`
+- 只有當你自己把 API 位址改成本地服務時，才需要另外架 `tdlib/telegram-bot-api`
 
 如果開啟 Telegram 上傳：
 
