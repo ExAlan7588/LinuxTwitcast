@@ -48,6 +48,8 @@ const I18N = {
         "system.noDiagnostics": "No diagnostics require attention right now.",
         "system.checking": "Checking...",
         "system.redirecting": "A newer build is available. Redirecting to the repository...",
+        "system.updateAvailable": "A newer build is available.",
+        "system.openRepository": "Open repository",
         "system.upToDate": "This build already matches origin/main.",
         "settings.section": "General & Streamer Settings",
         "settings.addStreamer": "Add Streamer",
@@ -167,6 +169,8 @@ const I18N = {
         "system.noDiagnostics": "目前沒有需要特別注意的診斷項目。",
         "system.checking": "檢查中...",
         "system.redirecting": "發現較新的版本，正在跳轉到倉庫頁面...",
+        "system.updateAvailable": "發現較新的版本。",
+        "system.openRepository": "前往倉庫",
         "system.upToDate": "目前版本已與 origin/main 一致。",
         "settings.section": "一般與直播主設定",
         "settings.addStreamer": "新增直播主",
@@ -711,8 +715,7 @@ async function checkForUpdates() {
     await runButtonAction(ui.checkVersionBtn, t("system.checking"), async () => {
         const result = await api("/api/version/check");
         if (result.update_available && result.repo_url) {
-            showToast(t("system.redirecting"));
-            window.location.href = result.repo_url;
+            showToastLink(t("system.updateAvailable"), t("system.openRepository"), result.repo_url);
             return;
         }
 
@@ -1001,12 +1004,32 @@ function formatDate(value) {
 }
 
 function showToast(message, isError = false) {
-    ui.toast.textContent = message;
+    ui.toast.replaceChildren(document.createTextNode(message));
+    setToastState(isError, 3600);
+}
+
+function showToastLink(message, linkLabel, url) {
+    const messageNode = document.createElement("span");
+    messageNode.textContent = message;
+
+    const spacer = document.createTextNode(" ");
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noreferrer noopener";
+    link.textContent = linkLabel;
+
+    ui.toast.replaceChildren(messageNode, spacer, link);
+    setToastState(false, 10000);
+}
+
+function setToastState(isError, durationMs) {
     ui.toast.className = `toast show${isError ? " error" : ""}`;
     window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => {
         ui.toast.className = "toast";
-    }, 3600);
+        ui.toast.replaceChildren();
+    }, durationMs);
 }
 
 function handleError(error) {

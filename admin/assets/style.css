@@ -579,11 +579,23 @@ html[data-theme="light"] tbody tr:hover td {
 
 .toast.show {
     opacity: 1;
+    pointer-events: auto;
     transform: translateY(0);
 }
 
 .toast.error {
     background: rgba(180, 35, 24, 0.94);
+}
+
+.toast a {
+    color: #9ff4ec;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+html[data-theme="light"] .toast a {
+    color: #b8fff7;
 }
 
 @media (max-width: 1120px) {
