@@ -41,9 +41,12 @@ type Server struct {
 	manager          *service.Manager
 	restartRequested chan<- struct{}
 	httpServer       *http.Server
+	buildInfo        BuildInfo
 }
 
 type RuntimeInfo struct {
+	Version          string `json:"version"`
+	GitCommit        string `json:"git_commit,omitempty"`
 	OS               string `json:"os"`
 	Arch             string `json:"arch"`
 	WorkingDirectory string `json:"working_directory"`
@@ -80,12 +83,14 @@ func NewServer(options Options, manager *service.Manager, restartRequested chan<
 		options:          options,
 		manager:          manager,
 		restartRequested: restartRequested,
+		buildInfo:        LoadBuildInfo(options.RootDir),
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/", server.withAuth(http.HandlerFunc(server.handleIndex)))
 	mux.Handle("/assets/", server.withAuth(server.assetHandler()))
 	mux.Handle("/api/status", server.withAuth(http.HandlerFunc(server.handleStatus)))
+	mux.Handle("/api/version/check", server.withAuth(http.HandlerFunc(server.handleVersionCheck)))
 	mux.Handle("/api/settings", server.withAuth(http.HandlerFunc(server.handleSettings)))
 	mux.Handle("/api/discord/test", server.withAuth(http.HandlerFunc(server.handleDiscordTest)))
 	mux.Handle("/api/telegram/test", server.withAuth(http.HandlerFunc(server.handleTelegramTest)))
@@ -151,6 +156,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, map[string]interface{}{
 		"recorder": status,
 		"runtime": RuntimeInfo{
+			Version:          s.buildInfo.Version,
+			GitCommit:        s.buildInfo.ShortCommit,
 			OS:               runtime.GOOS,
 			Arch:             runtime.GOARCH,
 			WorkingDirectory: s.options.RootDir,
@@ -163,6 +170,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"diagnostics":   s.buildDiagnostics(settings, status, ffmpegPath),
 		"needs_restart": status.Running,
 	})
+}
+
+func (s *Server) handleVersionCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	s.writeJSON(w, CheckForUpdates(s.options.RootDir, s.buildInfo))
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +214,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// 测试通知直接读取请求里的临时配置，避免必须先落盘才能验证 token 和目标频道。
+// Test notifications read the temporary request payload so credentials can be checked before saving to disk.
 func (s *Server) handleDiscordTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.methodNotAllowed(w)
@@ -211,7 +227,7 @@ func (s *Server) handleDiscordTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := discord.SendTestMessage(cfg, fmt.Sprintf("LinuxTwitcast Discord 測試訊息\n時間: %s\n來源: Web 管理頁", time.Now().Format(time.RFC3339))); err != nil {
+	if err := discord.SendTestMessage(cfg, fmt.Sprintf("LinuxTwitcast Discord test message\nTime: %s\nSource: Web console", time.Now().Format(time.RFC3339))); err != nil {
 		s.writeError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -222,7 +238,7 @@ func (s *Server) handleDiscordTest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// 测试通知直接读取请求里的临时配置，避免必须先落盘才能验证 token 和 chat_id。
+// Test notifications read the temporary request payload so credentials can be checked before saving to disk.
 func (s *Server) handleTelegramTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.methodNotAllowed(w)
@@ -235,7 +251,7 @@ func (s *Server) handleTelegramTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := telegram.SendTestMessage(cfg, fmt.Sprintf("LinuxTwitcast Telegram 測試訊息\n時間: %s\n來源: Web 管理頁", time.Now().Format(time.RFC3339))); err != nil {
+	if err := telegram.SendTestMessage(cfg, fmt.Sprintf("LinuxTwitcast Telegram test message\nTime: %s\nSource: Web console", time.Now().Format(time.RFC3339))); err != nil {
 		s.writeError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -553,7 +569,7 @@ func (s *Server) handleFileTelegramUpload(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 手動上傳要保留原檔案；音訊檔送 sendAudio，其餘檔案送 sendDocument。
+	// Manual uploads must keep the original file; audio goes to sendAudio and everything else goes to sendDocument.
 	method, err := telegram.UploadManagedFile(telegramCfg, targetFile, telegramCaption(filepath.Base(targetFile)))
 	if err != nil {
 		s.writeError(w, http.StatusBadGateway, err)

@@ -49,6 +49,7 @@ function cacheElements() {
     ui.logsPanel = document.getElementById("logsPanel");
     ui.logsSummary = document.getElementById("logsSummary");
     ui.hideOfflineLogsInput = document.getElementById("hideOfflineLogsInput");
+    ui.checkVersionBtn = document.getElementById("checkVersionBtn");
 
     ui.themeToggleBtn = document.getElementById("themeToggleBtn");
     ui.refreshBtn = document.getElementById("refreshBtn");
@@ -67,6 +68,7 @@ function bindEvents() {
     ui.themeToggleBtn.addEventListener("click", toggleTheme);
     ui.refreshBtn.addEventListener("click", () => refreshAll().catch(handleError));
     ui.saveSettingsBtn.addEventListener("click", () => saveSettings().catch(handleError));
+    ui.checkVersionBtn.addEventListener("click", () => checkForUpdates().catch(handleError));
     ui.discordTestBtn.addEventListener("click", () => sendDiscordTest().catch(handleError));
     ui.telegramTestBtn.addEventListener("click", () => sendTelegramTest().catch(handleError));
     ui.startRecorderBtn.addEventListener("click", () => controlRecorder("start").catch(handleError));
@@ -81,7 +83,7 @@ function bindEvents() {
     ui.hideOfflineLogsInput.addEventListener("change", handleOfflineLogFilterChange);
 }
 
-// 主題切換要在頁面載入初期就同步，避免先閃成錯誤配色。
+// Theme needs to be applied before the first full paint to avoid a flash of the wrong palette.
 function initTheme() {
     applyTheme(readStoredTheme());
 }
@@ -109,8 +111,8 @@ function applyTheme(theme) {
 
     if (ui.themeToggleBtn) {
         const isDark = nextTheme === "dark";
-        ui.themeToggleBtn.textContent = isDark ? "切到淺色" : "切到黑暗";
-        ui.themeToggleBtn.setAttribute("aria-label", isDark ? "切換到淺色模式" : "切換到黑暗模式");
+        ui.themeToggleBtn.textContent = isDark ? "Use Light Theme" : "Use Dark Theme";
+        ui.themeToggleBtn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
         ui.themeToggleBtn.setAttribute("aria-pressed", String(isDark));
     }
 
@@ -202,15 +204,15 @@ async function loadLogs() {
     renderLogs();
 }
 
-// 把 offline 輪詢提前在後端過濾，避免大量噪音先把有用日誌擠出最後 250 筆。
+// Filter offline polling on the backend first so noisy lines do not push useful logs out of the latest window.
 function renderLogs() {
     ui.logsSummary.textContent = buildLogSummary();
 
     if (!logState.lines.length) {
         if (logState.hideOffline && logState.filteredCount > 0) {
-            ui.logsPanel.textContent = `最近保留下來的有效日誌為空，已隱藏 ${logState.filteredCount} 筆離線輪詢。取消勾選可查看原始內容。`;
+            ui.logsPanel.textContent = `No useful log lines remain in the latest window. ${logState.filteredCount} offline polling entries were hidden. Disable the filter to inspect the raw output.`;
         } else {
-            ui.logsPanel.textContent = "目前沒有可顯示的日誌。";
+            ui.logsPanel.textContent = "No log lines are available right now.";
         }
     } else {
         ui.logsPanel.textContent = logState.lines.join("\n");
@@ -220,12 +222,12 @@ function renderLogs() {
 
 function buildLogSummary() {
     if (!logState.hideOffline) {
-        return "顯示原始即時日誌。";
+        return "Showing raw live logs.";
     }
     if (logState.filteredCount <= 0) {
-        return "已啟用離線輪詢過濾。";
+        return "Offline polling filter is enabled.";
     }
-    return `已隱藏 ${logState.filteredCount} 筆離線輪詢日誌。`;
+    return `${logState.filteredCount} offline polling log lines are hidden.`;
 }
 
 function renderStatus(data) {
@@ -237,10 +239,10 @@ function renderStatus(data) {
     ui.statusBadge.textContent = recorder.stopping ? "Stopping" : recorder.running ? "Running" : "Stopped";
 
     const metrics = [
-        ["已啟用直播主", recorder.enabled_streamers ?? 0],
-        ["總排程數", recorder.scheduled_jobs ?? 0],
-        ["活動錄影數", (recorder.active_recordings || []).length],
-        ["運行時間", recorder.uptime || "未啟動"]
+        ["Enabled Streamers", recorder.enabled_streamers ?? 0],
+        ["Scheduled Jobs", recorder.scheduled_jobs ?? 0],
+        ["Active Recordings", (recorder.active_recordings || []).length],
+        ["Uptime", recorder.uptime || "Not started"]
     ];
     ui.recorderSummary.innerHTML = "";
     metrics.forEach(([label, value]) => {
@@ -253,13 +255,13 @@ function renderStatus(data) {
     if (recorder.last_error) {
         const item = document.createElement("div");
         item.className = "metric";
-        item.innerHTML = `<span>最近錯誤</span><strong>${escapeHtml(recorder.last_error)}</strong>`;
+        item.innerHTML = `<span>Latest Error</span><strong>${escapeHtml(recorder.last_error)}</strong>`;
         ui.recorderSummary.appendChild(item);
     }
 
     ui.activeRecordings.innerHTML = "";
     if (!recorder.active_recordings?.length) {
-        ui.activeRecordings.textContent = "目前沒有活動中的錄影。";
+        ui.activeRecordings.textContent = "No active recordings.";
     } else {
         recorder.active_recordings.forEach((entry) => {
             const item = document.createElement("div");
@@ -267,7 +269,7 @@ function renderStatus(data) {
             item.innerHTML = `
                 <strong>${escapeHtml(entry.streamer_name || entry.streamer)}</strong>
                 <div class="muted-text mono">${escapeHtml(entry.streamer)}</div>
-                <div>${escapeHtml(entry.title || "未命名直播")}</div>
+                <div>${escapeHtml(entry.title || "Untitled stream")}</div>
                 <div class="muted-text mono">${escapeHtml(entry.filename || "")}</div>
             `;
             ui.activeRecordings.appendChild(item);
@@ -276,11 +278,13 @@ function renderStatus(data) {
 
     ui.runtimeInfo.innerHTML = "";
     [
+        ["Version", runtime.version || "null"],
+        ["Git Commit", runtime.git_commit || "-"],
         ["OS / Arch", `${runtime.os || "-"} / ${runtime.arch || "-"}`],
         ["Working Directory", runtime.working_directory || "-"],
         ["Executable", runtime.executable || "-"],
         ["Listen", runtime.listen_address || "-"],
-        ["FFmpeg", runtime.ffmpeg_path || "未找到"],
+        ["FFmpeg", runtime.ffmpeg_path || "Not found"],
         ["Built-in Auth", runtime.auth_enabled ? "Enabled" : "Disabled"]
     ].forEach(([label, value]) => {
         const dt = document.createElement("dt");
@@ -292,7 +296,7 @@ function renderStatus(data) {
 
     ui.diagnostics.innerHTML = "";
     if (!diagnostics.length) {
-        ui.diagnostics.textContent = "目前沒有偵測到需要特別處理的項目。";
+        ui.diagnostics.textContent = "No diagnostics require attention right now.";
     } else {
         diagnostics.forEach((item) => {
             const box = document.createElement("div");
@@ -307,7 +311,7 @@ function renderStatus(data) {
 }
 
 function renderSettings(settings) {
-    ui.langInput.value = settings.app?.lang || "ZH";
+    ui.langInput.value = settings.app?.lang || "EN";
     ui.enableLogInput.checked = Boolean(settings.app?.enable_log);
     renderStreamers(settings.app?.streamers || []);
 
@@ -331,7 +335,7 @@ function renderStreamers(streamers) {
 
     if (!streamers.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="5" class="muted-text">尚未設定任何直播主。按右上角「新增直播主」即可建立。</td>`;
+        row.innerHTML = `<td colspan="5" class="muted-text">No streamers are configured yet. Use “Add Streamer” to create one.</td>`;
         ui.streamersBody.appendChild(row);
         return;
     }
@@ -349,7 +353,7 @@ function createStreamerRow(streamer = {}) {
         <td><input type="text" data-field="screen-id" placeholder="mielu_ii"></td>
         <td><input type="text" data-field="schedule" placeholder="@every 5s"></td>
         <td><input type="text" data-field="folder" placeholder="Recordings/streamer-name"></td>
-        <td class="actions-cell"><button type="button" class="small danger">移除</button></td>
+        <td class="actions-cell"><button type="button" class="small danger">Remove</button></td>
     `;
 
     row.querySelector('[data-field="enabled"]').checked = Boolean(streamer.enabled ?? true);
@@ -384,31 +388,44 @@ async function saveSettings() {
     if (response.warning) {
         showToast(response.warning, true);
     } else {
-        showToast(response.needs_restart ? "設定已儲存，錄影器目前正在運行，建議重新啟動以套用新設定。" : "設定已儲存。");
+        showToast(response.needs_restart ? "Settings were saved. The recorder is still running, so a restart is recommended before expecting new behavior." : "Settings saved.");
     }
     await refreshAll();
 }
 
-// 测试按钮要直接吃当前表单值，避免用户还没保存就无法验证通知配置。
+// Test actions use the current form values so users can validate credentials before saving them to disk.
 async function sendDiscordTest() {
-    await runButtonAction(ui.discordTestBtn, "發送中…", async () => {
+    await runButtonAction(ui.discordTestBtn, "Sending...", async () => {
         const payload = collectDiscordSettings();
         await api("/api/discord/test", {
             method: "POST",
             body: JSON.stringify(payload)
         });
-        showToast("Discord 測試訊息已送出。");
+        showToast("Discord test message sent.");
     });
 }
 
 async function sendTelegramTest() {
-    await runButtonAction(ui.telegramTestBtn, "發送中…", async () => {
+    await runButtonAction(ui.telegramTestBtn, "Sending...", async () => {
         const payload = collectTelegramSettings();
         await api("/api/telegram/test", {
             method: "POST",
             body: JSON.stringify(payload)
         });
-        showToast("Telegram 測試訊息已送出。");
+        showToast("Telegram test message sent.");
+    });
+}
+
+async function checkForUpdates() {
+    await runButtonAction(ui.checkVersionBtn, "Checking...", async () => {
+        const result = await api("/api/version/check");
+        if (result.update_available && result.repo_url) {
+            showToast("A newer build is available. Redirecting to the repository...");
+            window.location.href = result.repo_url;
+            return;
+        }
+
+        showToast(result.message || "This build already matches origin/main.");
     });
 }
 
@@ -471,23 +488,23 @@ function collectTelegramSettings() {
 
 async function controlRecorder(action) {
     await api(`/api/recorder/${action}`, { method: "POST" });
-    showToast(`錄影器已執行 ${action}。`);
+    showToast(`Recorder action completed: ${action}.`);
     await Promise.all([loadStatus(), loadLogs()]);
 }
 
 async function restartBot() {
-    if (!window.confirm("確定要重啟整個 Bot 嗎？這會短暫中斷目前的管理頁與錄影器。")) {
+    if (!window.confirm("Restart the entire bot process now? The web console and recorder will disconnect briefly.")) {
         return;
     }
 
     botRestartPending = true;
     ui.restartBotBtn.disabled = true;
     await api("/api/bot/restart", { method: "POST" });
-    showToast("Bot 正在重啟，頁面會在幾秒後自動重新連線。");
+    showToast("Bot restart requested. The page will reconnect automatically in a few seconds.");
     waitForBotRecovery();
 }
 
-// Bot 重啟後 listener 會短暫斷線，這裡輪詢健康狀態，等它回來再自動刷新頁面。
+// After a bot restart the listener disappears briefly, so poll health until the web process comes back.
 function waitForBotRecovery() {
     const startedAt = Date.now();
 
@@ -503,7 +520,7 @@ function waitForBotRecovery() {
         if (Date.now() - startedAt >= 60000) {
             botRestartPending = false;
             ui.restartBotBtn.disabled = false;
-            showToast("Bot 尚未在 60 秒內恢復，請檢查 web.log 或程序輸出。", true);
+            showToast("Bot did not recover within 60 seconds. Check web.log or the process output.", true);
             return;
         }
 
@@ -524,7 +541,7 @@ function renderFileRoots(roots) {
     roots.forEach((root) => {
         const option = document.createElement("option");
         option.value = root.root;
-        option.textContent = root.exists ? `${root.label} · ${root.root}` : `${root.label} · ${root.root} (尚未建立)`;
+        option.textContent = root.exists ? `${root.label} · ${root.root}` : `${root.label} · ${root.root} (not created yet)`;
         ui.fileRootSelect.appendChild(option);
     });
 
@@ -550,7 +567,7 @@ async function browseFiles(root, path) {
     ui.filesBody.innerHTML = "";
     if (!data.entries?.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="5" class="muted-text">這個資料夾目前是空的。</td>`;
+        row.innerHTML = `<td colspan="5" class="muted-text">This folder is currently empty.</td>`;
         ui.filesBody.appendChild(row);
         return;
     }
@@ -590,22 +607,22 @@ function createFileRow(entry) {
         const uploadButton = document.createElement("button");
         uploadButton.type = "button";
         uploadButton.className = "table-link";
-        uploadButton.textContent = actionsCell.childNodes.length ? " / 上傳" : "上傳";
+        uploadButton.textContent = actionsCell.childNodes.length ? " / Upload" : "Upload";
         uploadButton.addEventListener("click", async () => {
-            if (!window.confirm(`確定要把 ${entry.name} 上傳到 Telegram 嗎？`)) {
+            if (!window.confirm(`Upload ${entry.name} to Telegram now?`)) {
                 return;
             }
 
             const originalLabel = uploadButton.textContent;
             uploadButton.disabled = true;
-            uploadButton.textContent = actionsCell.childNodes.length ? " / 上傳中…" : "上傳中…";
+            uploadButton.textContent = actionsCell.childNodes.length ? " / Uploading..." : "Uploading...";
             try {
                 const result = await api("/api/files/telegram-upload", {
                     method: "POST",
                     body: JSON.stringify({ root: fileState.root, path: entry.path })
                 });
-                const modeLabel = result.method === "audio" ? "音訊" : "檔案";
-                showToast(`已將 ${entry.name} 以上傳${modeLabel}送到 Telegram。`);
+                const modeLabel = result.method === "audio" ? "audio" : "document";
+                showToast(`${entry.name} was uploaded to Telegram as ${modeLabel}.`);
             } finally {
                 uploadButton.disabled = false;
                 uploadButton.textContent = originalLabel;
@@ -615,7 +632,7 @@ function createFileRow(entry) {
 
         const downloadLink = document.createElement("a");
         downloadLink.className = "table-link";
-        downloadLink.textContent = actionsCell.childNodes.length ? " / 下載" : "下載";
+        downloadLink.textContent = actionsCell.childNodes.length ? " / Download" : "Download";
         downloadLink.href = `/api/files/download?root=${encodeURIComponent(fileState.root)}&path=${encodeURIComponent(entry.path)}`;
         downloadLink.setAttribute("download", "");
         actionsCell.appendChild(downloadLink);
@@ -625,16 +642,16 @@ function createFileRow(entry) {
         const deleteButton = document.createElement("button");
         deleteButton.type = "button";
         deleteButton.className = "table-link";
-        deleteButton.textContent = actionsCell.childNodes.length ? " / 刪除" : "刪除";
+        deleteButton.textContent = actionsCell.childNodes.length ? " / Delete" : "Delete";
         deleteButton.addEventListener("click", async () => {
-            if (!window.confirm(`確定要刪除 ${entry.name} 嗎？`)) {
+            if (!window.confirm(`Delete ${entry.name}?`)) {
                 return;
             }
             await api("/api/files/delete", {
                 method: "POST",
                 body: JSON.stringify({ root: fileState.root, path: entry.path })
             });
-            showToast(`已刪除 ${entry.name}`);
+            showToast(`${entry.name} was deleted.`);
             await browseFiles(fileState.root, fileState.path);
         });
         actionsCell.appendChild(deleteButton);
@@ -692,7 +709,7 @@ function handleError(error) {
     if (botRestartPending) {
         return;
     }
-    showToast(error.message || "發生未預期錯誤。", true);
+    showToast(error.message || "An unexpected error occurred.", true);
 }
 
 function escapeHtml(value) {

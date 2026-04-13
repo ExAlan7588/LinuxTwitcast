@@ -122,3 +122,29 @@ func TestHandleFileTelegramUploadUsesDocumentForGenericFiles(t *testing.T) {
 		t.Fatalf("unexpected chat_id: %s", receivedChatID)
 	}
 }
+
+func TestHandleVersionCheckReturnsJSON(t *testing.T) {
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: t.TempDir(),
+	}, service.NewManager(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/version/check", nil)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var payload VersionCheckResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Version != defaultVersion {
+		t.Fatalf("unexpected version: %q", payload.Version)
+	}
+	if payload.Message == "" {
+		t.Fatal("expected a human-readable message")
+	}
+}

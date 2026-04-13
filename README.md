@@ -1,89 +1,209 @@
-## **LinuxTwitcast**
-Checks the live status of streamers on twitcasting.tv automatically at scheduled time, and records the live stream if it's available.
+# LinuxTwitcast
 
-This fork uses `config.json` / `discord.json` / `telegram.json` and adds a built-in `web` mode so the project can be managed from a browser on a headless Linux or VPS host.
+[Traditional Chinese README](README_ZH.md)
 
----
+LinuxTwitcast records TwitCasting streams on a schedule and adds a built-in web console for headless Ubuntu / VPS deployments.
 
-### **Disclaimer** 
-This application constantly calls unofficial, non-documented twitcasting API to fetch live stream status. Please note that: 
-* This application might not work in the future, subjecting to any change of twitcasting APIs 
-* Checking live stream status at high frequency might result in being banned from using twitcasting service, subjecting to twitcasting's terms and condition
+The web console is now English-first by default and lets you manage:
 
-<span style="color:red">Please note the above and use this application at your own risk. </span>
+- recorder start / stop / restart
+- streamer schedules
+- Discord and Telegram settings
+- live logs
+- file browsing, download, delete, and Telegram upload
+- current build version display
+- update checks against `origin/main`
 
----
+## Runtime Target
 
-### **Installation**
-* **Target runtime**
-  This fork is maintained for Ubuntu / Linux deployments.
-* **Build from source**
-  Ensure that [Go](https://go.dev/doc/install) and `ffmpeg` are installed on your system.
-  ```bash
-  git clone https://github.com/ExAlan7588/LinuxTwitcast.git
-  cd LinuxTwitcast
-  go build -o twitcast_bot .
-  ```
-* **Ubuntu VPS guide**
-  See [docs/ubuntu-vps.md](docs/ubuntu-vps.md) for package install, startup, and service examples.
+This fork is maintained for Linux, especially Ubuntu VPS deployments.
 
---- 
+Recommended baseline:
 
-### **Usage** 
-* **Croned recording mode _(default)_**  
-  Please refer to [configuration](#configuration) section below to create configuration file. 
-  ```Bash
-  # Execute below command to start the recorder
-  ./twitcast_bot
+- Ubuntu `24.04 LTS`
+- `go`
+- `ffmpeg`
+- a process supervisor such as `pm2` or `systemd`
 
-  # Or specify croned recording mode explicitly 
-  ./twitcast_bot croned
-  ```
+## Install
 
-* **Direct recording mode**  
-  Direct recording mode supports recording to start immediately, with configurable number of retries and retry backoff period. 
-  ```Bash
-  # Start in direct recording mode  
-  ./twitcast_bot direct --streamer=${STREAMER_SCREEN_ID}
-  """
-  Usage of direct:
-  -retries int
-    	[optional] number of retries (default 0)
-  -retry-backoff duration
-    	[optional] retry backoff period (default 15s)
-  -streamer string
-    	[required] streamer URL
-  """
-  # Streamer URL must be supplied as argument 
+```bash
+git clone https://github.com/ExAlan7588/LinuxTwitcast.git
+cd LinuxTwitcast
+go build -o twitcast_bot .
+```
 
-  # Example: 
-  ./twitcast_bot direct --streamer=azusa_shirokyan --retries=10 --retry-backoff=1m
-  ```
+On Ubuntu:
 
-* **Web management mode**
-  The built-in web console is useful on Ubuntu / VPS deployments where no GUI is available.
-  ```Bash
-  ./twitcast_bot web --addr=127.0.0.1:8080
-  ```
+```bash
+sudo apt update
+sudo apt install -y golang-go ffmpeg
+```
 
----
+More deployment notes: [docs/ubuntu-vps.md](docs/ubuntu-vps.md)
 
-### **Configuration**
-  Configuration file `config.json` should be placed in the current directory under croned recording mode.  
-  Streamers are stored under the `streamers` array in `config.json`.  
-  Multiple streamers could be specified with individual schedules. Status check and recording for different streamers would _not_ affect each other.  
+## Start Modes
 
-  #### Field explanations: 
-  + `screen-id`:  
-    Presented on the URL of the screamer's top page.  
-    Example: Top page URL of streamer [小野寺梓@真っ白なキャンバス](https://twitcasting.tv/azusa_shirokyan) is `https://twitcasting.tv/azusa_shirokyan`, the corresponding screen-id is `azusa_shirokyan`
-  + `schedule`:   
-    Please refer to the below docs for supported schedule definitions: 
-    - https://pkg.go.dev/github.com/robfig/cron/v3#hdr-CRON_Expression_Format
-    - https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Predefined_schedules   
+Default scheduled recorder mode:
 
----
+```bash
+./twitcast_bot
+```
 
-### **Output**  
-  Output recording file would be put under the current directory, named after `screen-id-yyyyMMdd-HHmm.ts`  
-  For example, a recording starts at 15:04 on 2nd Jan 2006 of streamer [小野寺梓@真っ白なキャンバス](https://twitcasting.tv/azusa_shirokyan) would create recording file `azusa_shirokyan-20060102-1504.ts`
+Explicit scheduled mode:
+
+```bash
+./twitcast_bot croned
+```
+
+Direct one-stream mode:
+
+```bash
+./twitcast_bot direct --streamer=azusa_shirokyan --retries=10 --retry-backoff=1m
+```
+
+Web console mode:
+
+```bash
+./twitcast_bot web --addr 127.0.0.1:8080
+```
+
+Web console mode with built-in auth:
+
+```bash
+TWITCAST_WEB_USERNAME=admin \
+TWITCAST_WEB_PASSWORD='change-this-now' \
+./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
+```
+
+`--addr` is the correct flag for web mode.
+
+## Configuration Files
+
+The recorder reads these files from the working directory:
+
+- `config.json`
+- `discord.json`
+- `telegram.json`
+
+The web console edits the same files, so browser changes and CLI runs stay in sync.
+
+## Discord Bot Setup
+
+LinuxTwitcast uses Discord in two separate ways:
+
+1. Send or edit live notification messages in channels.
+2. Optionally register message context-menu commands and assign per-streamer roles for subscribe / unsubscribe flows.
+
+### Required OAuth2 Scopes
+
+When inviting the bot, include:
+
+- `bot`
+- `applications.commands`
+
+### Required Channel Permissions
+
+For the notify channel, and also the archive channel if you use it, the bot should be allowed to:
+
+- `View Channels`
+- `Send Messages`
+- `Embed Links`
+- `Read Message History`
+
+These are grounded in the current code path that creates, edits, archives, and removes notification messages:
+
+- [discord/discord.go](</o:/Cursor AI/LinuxTwitcast/discord/discord.go:209>)
+- [discord/discord.go](</o:/Cursor AI/LinuxTwitcast/discord/discord.go:228>)
+- [discord/discord.go](</o:/Cursor AI/LinuxTwitcast/discord/discord.go:241>)
+
+### Required Role Permissions
+
+If you enable `tag_role` or want the context-menu subscribe / unsubscribe flow, the bot also needs:
+
+- `Manage Roles`
+- a bot role position above the per-streamer roles it creates or assigns
+
+Those operations are implemented here:
+
+- [discord/commands.go](</o:/Cursor AI/LinuxTwitcast/discord/commands.go:106>)
+- [discord/commands.go](</o:/Cursor AI/LinuxTwitcast/discord/commands.go:236>)
+- [discord/commands.go](</o:/Cursor AI/LinuxTwitcast/discord/commands.go:259>)
+
+### Guild ID Requirement
+
+If you enable role tagging or context-menu role assignment, fill in `Guild ID` in the web console or `discord.json`.
+
+### Privileged Intents
+
+This project currently identifies to Discord Gateway with `intents: 0`, so the current interaction flow does not depend on privileged intents such as Message Content Intent:
+
+- [discord/gateway.go](</o:/Cursor AI/LinuxTwitcast/discord/gateway.go:162>)
+
+## Telegram Notes
+
+If Telegram upload is enabled:
+
+- `telegram.json` needs a valid `bot_token`
+- `telegram.json` needs a valid `chat_id`
+- `ffmpeg` must exist in `PATH` when `convert_to_m4a` is enabled
+
+If `api_endpoint` points to `http://127.0.0.1:8081`, you must also run a local Telegram Bot API service on the VPS.
+
+## Updating On A VPS
+
+The web console is embedded into the `twitcast_bot` binary.
+That means `git pull` alone is not enough. You must rebuild and restart the real running process.
+
+### PM2 Example
+
+If your VPS uses `pm2` and the process name is `twitcast-bot`:
+
+```bash
+cd /opt/LinuxTwitcast
+git pull origin main
+go build -o twitcast_bot .
+pm2 restart twitcast-bot
+pm2 logs twitcast-bot --lines 50
+```
+
+### Systemd Example
+
+If your VPS uses a systemd service instead:
+
+```bash
+cd /opt/LinuxTwitcast
+git pull origin main
+go build -o twitcast_bot .
+sudo systemctl restart twitcast-web.service
+sudo systemctl status twitcast-web.service --no-pager -l
+```
+
+If you are unsure which supervisor is active, check first:
+
+```bash
+pm2 ls
+sudo systemctl list-units --type=service --all | grep -i twitcast
+ps -ef | grep twitcast_bot | grep -v grep
+```
+
+## Web Console Notes
+
+- default UI language is `English`
+- System Info currently shows `Version = null` during the testing stage
+- the `Check for Updates` button compares the local build commit with `origin/main`
+- if a newer commit exists and the repository remote can be mapped to a browser URL, the button redirects to the repository
+
+## Output
+
+Recordings are written to the working directory or the configured folder, using the pattern:
+
+```text
+screen-id-yyyyMMdd-HHmm.ts
+```
+
+Example:
+
+```text
+azusa_shirokyan-20060102-1504.ts
+```

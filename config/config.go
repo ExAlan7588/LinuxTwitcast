@@ -28,7 +28,7 @@ type AppConfig struct {
 
 func Default() *AppConfig {
 	return &AppConfig{
-		Lang:      "ZH",
+		Lang:      "EN",
 		Streamers: []*StreamerConfig{},
 	}
 }
@@ -130,7 +130,7 @@ func normalize(cfg *AppConfig) *AppConfig {
 		EnableLog: cfg.EnableLog,
 	}
 	if normalized.Lang == "" {
-		normalized.Lang = "ZH"
+		normalized.Lang = "EN"
 	}
 
 	for _, streamer := range cfg.Streamers {

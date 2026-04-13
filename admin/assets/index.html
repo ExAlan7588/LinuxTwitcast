@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>TwitCasting VPS 控制台</title>
+    <title>TwitCasting VPS Console</title>
     <script>
         (() => {
             try {
@@ -20,61 +20,64 @@
         <header class="hero">
             <div>
                 <p class="eyebrow">Headless Linux Control Room</p>
-                <h1>TwitCasting 錄影控制台</h1>
-                <p class="lede">把錄影、通知與檔案管理整合成在 Ubuntu VPS 上也能直接操作的單一網頁。</p>
+                <h1>TwitCasting Recorder Console</h1>
+                <p class="lede">Manage recording, notifications, files, and update checks from a single web console designed for Ubuntu VPS deployments.</p>
             </div>
             <div class="actions">
-                <button id="themeToggleBtn" type="button" class="ghost theme-toggle action-theme">切到淺色</button>
-                <button id="refreshBtn" class="ghost action-refresh">重新整理</button>
-                <button id="saveSettingsBtn" class="action-save">儲存設定</button>
-                <button id="startRecorderBtn" class="action-start">啟動錄影器</button>
-                <button id="stopRecorderBtn" class="danger action-stop">停止錄影器</button>
-                <button id="restartRecorderBtn" class="ghost action-restart">重新啟動</button>
-                <button id="restartBotBtn" class="danger action-bot">重啟 Bot</button>
+                <button id="themeToggleBtn" type="button" class="ghost theme-toggle action-theme">Use Light Theme</button>
+                <button id="refreshBtn" class="ghost action-refresh">Refresh</button>
+                <button id="saveSettingsBtn" class="action-save">Save Settings</button>
+                <button id="startRecorderBtn" class="action-start">Start Recorder</button>
+                <button id="stopRecorderBtn" class="danger action-stop">Stop Recorder</button>
+                <button id="restartRecorderBtn" class="ghost action-restart">Restart Recorder</button>
+                <button id="restartBotBtn" class="danger action-bot">Restart Bot</button>
             </div>
         </header>
 
         <section class="grid grid-top">
             <article class="panel">
                 <div class="section-head">
-                    <h2>服務狀態</h2>
-                    <span id="statusBadge" class="badge muted">載入中</span>
+                    <h2>Service Status</h2>
+                    <span id="statusBadge" class="badge muted">Loading</span>
                 </div>
                 <div id="recorderSummary" class="summary-grid"></div>
                 <div class="subsection">
-                    <h3>進行中的錄影</h3>
-                    <div id="activeRecordings" class="stack muted-text">目前沒有活動中的錄影。</div>
+                    <h3>Active Recordings</h3>
+                    <div id="activeRecordings" class="stack muted-text">No active recordings.</div>
                 </div>
             </article>
 
             <article class="panel">
                 <div class="section-head">
-                    <h2>系統資訊</h2>
+                    <h2>System Info</h2>
+                    <div class="inline-actions">
+                        <button id="checkVersionBtn" class="ghost small" type="button">Check for Updates</button>
+                    </div>
                 </div>
                 <dl id="runtimeInfo" class="runtime-list"></dl>
                 <div class="subsection">
-                    <h3>遷移檢查</h3>
-                    <div id="diagnostics" class="stack muted-text">尚未取得診斷結果。</div>
+                    <h3>Diagnostics</h3>
+                    <div id="diagnostics" class="stack muted-text">Diagnostics have not been loaded yet.</div>
                 </div>
             </article>
         </section>
 
         <section class="panel">
             <div class="section-head">
-                <h2>一般與串流設定</h2>
-                <button id="addStreamerBtn" class="ghost">新增直播主</button>
+                <h2>General &amp; Streamer Settings</h2>
+                <button id="addStreamerBtn" class="ghost">Add Streamer</button>
             </div>
             <div class="general-grid">
                 <label>
-                    <span>語言</span>
+                    <span>Recorder Language</span>
                     <select id="langInput">
-                        <option value="ZH">繁體中文</option>
                         <option value="EN">English</option>
+                        <option value="ZH">Traditional Chinese</option>
                     </select>
                 </label>
                 <label class="checkbox">
                     <input id="enableLogInput" type="checkbox">
-                    <span>同步寫入 `app.log`</span>
+                    <span>Mirror logs to `app.log`</span>
                 </label>
             </div>
 
@@ -82,10 +85,10 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>啟用</th>
+                            <th>Enabled</th>
                             <th>Screen ID</th>
-                            <th>排程</th>
-                            <th>儲存資料夾</th>
+                            <th>Schedule</th>
+                            <th>Target Folder</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -97,15 +100,15 @@
         <section class="grid grid-settings">
             <article class="panel">
                 <div class="section-head">
-                    <h2>Discord 通知</h2>
+                    <h2>Discord Notifications</h2>
                     <div class="inline-actions">
-                        <button id="discordTestBtn" class="ghost small" type="button">發送測試訊息</button>
+                        <button id="discordTestBtn" class="ghost small" type="button">Send Test Message</button>
                     </div>
                 </div>
                 <div class="form-grid">
                     <label class="checkbox">
                         <input id="discordEnabledInput" type="checkbox">
-                        <span>啟用 Discord 通知</span>
+                        <span>Enable Discord notifications</span>
                     </label>
                     <label>
                         <span>Bot Token</span>
@@ -116,31 +119,31 @@
                         <input id="discordGuildInput" type="text">
                     </label>
                     <label>
-                        <span>通知頻道 ID</span>
+                        <span>Notify Channel ID</span>
                         <input id="discordNotifyInput" type="text">
                     </label>
                     <label>
-                        <span>歸檔頻道 ID</span>
+                        <span>Archive Channel ID</span>
                         <input id="discordArchiveInput" type="text">
                     </label>
                     <label class="checkbox">
                         <input id="discordTagRoleInput" type="checkbox">
-                        <span>開播時標記對應角色</span>
+                        <span>Mention the per-streamer role when a stream starts</span>
                     </label>
                 </div>
             </article>
 
             <article class="panel">
                 <div class="section-head">
-                    <h2>Telegram 與轉檔</h2>
+                    <h2>Telegram &amp; Conversion</h2>
                     <div class="inline-actions">
-                        <button id="telegramTestBtn" class="ghost small" type="button">發送測試訊息</button>
+                        <button id="telegramTestBtn" class="ghost small" type="button">Send Test Message</button>
                     </div>
                 </div>
                 <div class="form-grid">
                     <label class="checkbox">
                         <input id="telegramEnabledInput" type="checkbox">
-                        <span>啟用 Telegram 上傳</span>
+                        <span>Enable Telegram upload</span>
                     </label>
                     <label>
                         <span>Bot Token</span>
@@ -156,11 +159,11 @@
                     </label>
                     <label class="checkbox">
                         <input id="telegramConvertInput" type="checkbox">
-                        <span>錄影完成後抽出 M4A 音訊</span>
+                        <span>Extract M4A audio after each recording</span>
                     </label>
                     <label class="checkbox">
                         <input id="telegramKeepInput" type="checkbox">
-                        <span>轉檔後保留原始 TS</span>
+                        <span>Keep the original TS file after conversion</span>
                     </label>
                 </div>
             </article>
@@ -169,15 +172,15 @@
         <section class="grid grid-bottom">
             <article class="panel">
                 <div class="section-head">
-                    <h2>檔案管理</h2>
+                    <h2>File Manager</h2>
                     <div class="inline-actions">
-                        <button id="fileUpBtn" class="ghost">上一層</button>
-                        <button id="fileRefreshBtn" class="ghost">重新整理</button>
+                        <button id="fileUpBtn" class="ghost">Up One Level</button>
+                        <button id="fileRefreshBtn" class="ghost">Refresh</button>
                     </div>
                 </div>
                 <div class="toolbar">
                     <label>
-                        <span>根目錄</span>
+                        <span>Root</span>
                         <select id="fileRootSelect"></select>
                     </label>
                     <div id="filePathLabel" class="path-pill">/</div>
@@ -186,10 +189,10 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>名稱</th>
-                                <th>類型</th>
-                                <th>大小</th>
-                                <th>修改時間</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Modified</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -200,17 +203,17 @@
 
             <article class="panel">
                 <div class="section-head">
-                    <h2>即時日誌</h2>
+                    <h2>Live Logs</h2>
                     <div class="inline-actions log-actions">
                         <label class="checkbox compact-toggle">
                             <input id="hideOfflineLogsInput" type="checkbox" checked>
-                            <span>隱藏離線輪詢</span>
+                            <span>Hide offline polling</span>
                         </label>
-                        <button id="logsRefreshBtn" class="ghost">重新整理</button>
+                        <button id="logsRefreshBtn" class="ghost">Refresh</button>
                     </div>
                 </div>
                 <div id="logsSummary" class="logs-summary muted-text"></div>
-                <pre id="logsPanel" class="console">載入中...</pre>
+                <pre id="logsPanel" class="console">Loading...</pre>
             </article>
         </section>
     </div>

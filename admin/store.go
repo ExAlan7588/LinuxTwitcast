@@ -60,7 +60,7 @@ func ValidateSettings(settings *Settings) error {
 	}
 
 	if strings.TrimSpace(settings.App.Lang) == "" {
-		settings.App.Lang = "ZH"
+		settings.App.Lang = "EN"
 	}
 	if settings.App.Streamers == nil {
 		settings.App.Streamers = []*config.StreamerConfig{}
