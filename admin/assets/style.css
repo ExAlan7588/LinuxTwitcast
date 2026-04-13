@@ -683,6 +683,10 @@ html[data-theme="light"] .toast a {
     padding: 24px;
 }
 
+.modal-shell[hidden] {
+    display: none;
+}
+
 .modal-backdrop {
     position: absolute;
     inset: 0;
