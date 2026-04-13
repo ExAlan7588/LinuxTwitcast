@@ -50,10 +50,8 @@ If you already protect the app behind Nginx, Caddy, Tailscale, or an SSH tunnel,
 - Download files
 - Delete files or empty directories
 
-## Important Migration Notes
+## Important Runtime Notes
 
-- `launcher.py` is still Windows-specific and should not be used on Ubuntu.
-- `croned-twitcasting-recorder.exe` is a Windows binary and will not run on Ubuntu.
 - If Telegram audio extraction is enabled, `ffmpeg` must exist in `PATH`.
 - If `telegram.json` uses `http://127.0.0.1:8081`, you must also run a local Telegram Bot API service on the VPS. Otherwise switch it back to `https://api.telegram.org`.
 - `discord.json` and `telegram.json` contain secrets. On Linux, keep them readable only by the service account.

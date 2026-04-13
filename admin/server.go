@@ -567,12 +567,6 @@ func (s *Server) buildDiagnostics(settings Settings, status service.Status, ffmp
 		diagnostics = append(diagnostics, Diagnostic{Level: level, Message: message})
 	}
 
-	if _, err := os.Stat(filepath.Join(s.options.RootDir, "launcher.py")); err == nil {
-		add("warn", "launcher.py uses Windows console APIs and should not be used on Ubuntu. Start the Go binary in web mode instead.")
-	}
-	if _, err := os.Stat(filepath.Join(s.options.RootDir, "croned-twitcasting-recorder.exe")); err == nil {
-		add("warn", "The checked-in .exe is Windows-only. Build or copy a Linux binary for the VPS.")
-	}
 	if config.EnabledStreamers(&settings.App) == 0 {
 		add("warn", "No enabled streamers are configured. The recorder cannot start until at least one streamer is enabled.")
 	}

@@ -1,5 +1,5 @@
-## **Croned Twicasting Recorder** 
-Checks the live status of streamers on twitcasting.tv automatically at scheduled time, and records the live stream if it's available 
+## **LinuxTwitcast**
+Checks the live status of streamers on twitcasting.tv automatically at scheduled time, and records the live stream if it's available.
 
 This fork uses `config.json` / `discord.json` / `telegram.json` and adds a built-in `web` mode so the project can be managed from a browser on a headless Linux or VPS host.
 
@@ -14,23 +14,18 @@ This application constantly calls unofficial, non-documented twitcasting API to 
 
 ---
 
-### **Installation** 
-* **Executables**   
-  Executables can be found on [release page](https://github.com/jzhang046/croned-twitcasting-recorder/releases). 
-* **Build from source**   
-  Ensure that [golang is installed](https://golang.org/doc/install) on your system. 
-  ```Bash
-  git clone https://github.com/jzhang046/croned-twitcasting-recorder && cd croned-twitcasting-recorder
-  go build -o ./bin/
-  # Executable: ./bin/croned-twitcasting-recorder
-  ```
-* **Windows launcher via `uv`**
-  The Windows menu launcher is now managed with `uv` instead of calling `python` directly.
-  Install `uv` first, then run:
+### **Installation**
+* **Target runtime**
+  This fork is maintained for Ubuntu / Linux deployments.
+* **Build from source**
+  Ensure that [Go](https://go.dev/doc/install) and `ffmpeg` are installed on your system.
   ```bash
-  uv run launcher.py
+  git clone https://github.com/ExAlan7588/LinuxTwitcast.git
+  cd LinuxTwitcast
+  go build -o twitcast_bot .
   ```
-  On Windows, you can also start it with `選單啟動器.bat`, which now wraps the same `uv run launcher.py` command.
+* **Ubuntu VPS guide**
+  See [docs/ubuntu-vps.md](docs/ubuntu-vps.md) for package install, startup, and service examples.
 
 --- 
 
@@ -39,17 +34,17 @@ This application constantly calls unofficial, non-documented twitcasting API to 
   Please refer to [configuration](#configuration) section below to create configuration file. 
   ```Bash
   # Execute below command to start the recorder
-  ./bin/croned-twitcasting-recorder
+  ./twitcast_bot
 
   # Or specify croned recording mode explicitly 
-  ./bin/croned-twitcasting-recorder croned
+  ./twitcast_bot croned
   ```
 
 * **Direct recording mode**  
   Direct recording mode supports recording to start immediately, with configurable number of retries and retry backoff period. 
   ```Bash
   # Start in direct recording mode  
-  ./bin/croned-twitcasting-recorder direct --streamer=${STREAMER_SCREEN_ID}
+  ./twitcast_bot direct --streamer=${STREAMER_SCREEN_ID}
   """
   Usage of direct:
   -retries int
@@ -62,13 +57,13 @@ This application constantly calls unofficial, non-documented twitcasting API to 
   # Streamer URL must be supplied as argument 
 
   # Example: 
-  ./bin/croned-twitcasting-recorder direct --streamer=azusa_shirokyan --retries=10 --retry-backoff=1m
+  ./twitcast_bot direct --streamer=azusa_shirokyan --retries=10 --retry-backoff=1m
   ```
 
 * **Web management mode**
   The built-in web console is useful on Ubuntu / VPS deployments where no GUI is available.
   ```Bash
-  ./bin/croned-twitcasting-recorder web --addr=127.0.0.1:8080
+  ./twitcast_bot web --addr=127.0.0.1:8080
   ```
 
 ---
