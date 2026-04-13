@@ -14,6 +14,31 @@ The web console is now English-first by default and lets you manage:
 - current build version display
 - update checks against `origin/main`
 
+## Project Lineage
+
+This repository is a modified fork of the original open-source project:
+
+- Original upstream: https://github.com/jzhang046/croned-twitcasting-recorder
+
+For Telegram users who want to point `telegram.json` at a local Bot API server instead of `https://api.telegram.org`, see:
+
+- Telegram Bot API server: https://github.com/tdlib/telegram-bot-api
+
+## Platform Support
+
+This fork is **Linux-only supported**.
+
+- Supported and documented: Linux, especially Ubuntu VPS deployments
+- Not supported and not documented: Windows
+- Not supported and not documented: macOS
+
+Important clarification for beginners:
+
+- The Go source tree may still compile on non-Linux platforms in some cases.
+- That does **not** mean this fork is maintained for those platforms.
+- All current setup, runtime, update, and troubleshooting guidance in this repository assumes Linux.
+- If you want the supported path, use Ubuntu `24.04 LTS`.
+
 ## Runtime Target
 
 This fork is maintained for Linux, especially Ubuntu VPS deployments.
@@ -41,6 +66,40 @@ sudo apt install -y golang-go ffmpeg
 ```
 
 More deployment notes: [docs/ubuntu-vps.md](docs/ubuntu-vps.md)
+
+## Beginner Quick Start
+
+If you are new to Linux or self-hosting, use this order and do not skip steps:
+
+1. Install Ubuntu packages.
+2. Clone this repository.
+3. Build `twitcast_bot`.
+4. Start the web console with a username and password.
+5. Open the web console in your browser or through your reverse proxy.
+6. Fill in `config.json`, `discord.json`, and `telegram.json` from the web console.
+7. Save settings.
+8. Start the recorder.
+
+Minimal first-time setup:
+
+```bash
+sudo apt update
+sudo apt install -y golang-go ffmpeg git
+git clone https://github.com/ExAlan7588/LinuxTwitcast.git
+cd LinuxTwitcast
+go build -o twitcast_bot .
+TWITCAST_WEB_USERNAME=admin \
+TWITCAST_WEB_PASSWORD='change-this-now' \
+./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8080
+```
+
+If you are on a remote VPS, expose it through your reverse proxy or SSH tunnel first. Do not bind a public address without authentication unless you already protect it elsewhere.
 
 ## Start Modes
 
@@ -102,6 +161,8 @@ When inviting the bot, include:
 - `bot`
 - `applications.commands`
 
+If you are a beginner, start with those two scopes only. Do not add extra scopes unless you know you need them.
+
 ### Required Channel Permissions
 
 For the notify channel, and also the archive channel if you use it, the bot should be allowed to:
@@ -110,6 +171,8 @@ For the notify channel, and also the archive channel if you use it, the bot shou
 - `Send Messages`
 - `Embed Links`
 - `Read Message History`
+
+If you only want basic live notifications, the four permissions above are the important starting point.
 
 These are grounded in the current code path that creates, edits, archives, and removes notification messages:
 
@@ -123,6 +186,8 @@ If you enable `tag_role` or want the context-menu subscribe / unsubscribe flow, 
 
 - `Manage Roles`
 - a bot role position above the per-streamer roles it creates or assigns
+
+If you do **not** use `tag_role`, you can leave `Manage Roles` out.
 
 Those operations are implemented here:
 
@@ -149,6 +214,7 @@ If Telegram upload is enabled:
 - `ffmpeg` must exist in `PATH` when `convert_to_m4a` is enabled
 
 If `api_endpoint` points to `http://127.0.0.1:8081`, you must also run a local Telegram Bot API service on the VPS.
+One supported local server implementation is `tdlib/telegram-bot-api`.
 
 ## Updating On A VPS
 
