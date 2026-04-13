@@ -66,6 +66,19 @@ sudo apt update
 sudo apt install -y git golang-go ffmpeg
 ```
 
+If you want the process to stay alive in the background and auto-restart on a VPS, also install:
+
+- `nodejs`
+- `npm`
+- `pm2`
+
+On Ubuntu:
+
+```bash
+sudo apt install -y nodejs npm
+sudo npm install pm2@latest -g
+```
+
 ## Install
 
 ```bash
@@ -171,37 +184,68 @@ Important Windows caveats:
 
 ## Start Modes
 
-Default scheduled recorder mode:
+If this section feels confusing, use this rule:
+
+- most beginners should start with the web console mode
+
+The most common command is:
 
 ```bash
-./twitcast_bot
+TWITCAST_WEB_USERNAME=your-login-name \
+TWITCAST_WEB_PASSWORD='your-own-password' \
+./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
 ```
 
-Explicit scheduled mode:
+Meaning:
+
+- `TWITCAST_WEB_USERNAME`: the username you choose for the frontend login
+- `TWITCAST_WEB_PASSWORD`: the password you choose for the frontend login
+- `web`: start the frontend
+- `--addr 127.0.0.1:8080`: listen on local port `8080`
+- `--auto-start`: start the recorder automatically when the frontend boots
+
+### 1. Most common: web console mode
 
 ```bash
-./twitcast_bot croned
+TWITCAST_WEB_USERNAME=your-login-name \
+TWITCAST_WEB_PASSWORD='your-own-password' \
+./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
 ```
 
-Direct one-stream mode:
+Use this when you want to manage everything from the frontend.
 
-```bash
-./twitcast_bot direct --streamer=azusa_shirokyan --retries=10 --retry-backoff=1m
-```
-
-Web console mode:
+### 2. Frontend only, recorder not auto-started
 
 ```bash
 ./twitcast_bot web --addr 127.0.0.1:8080
 ```
 
-Web console mode with built-in auth:
+Use this when you want to open the frontend first, save settings, and then click `Start Recorder` manually.
+
+### 3. Scheduled recorder only, no frontend
 
 ```bash
-TWITCAST_WEB_USERNAME=admin \
-TWITCAST_WEB_PASSWORD='change-this-now' \
-./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
+./twitcast_bot
 ```
+
+or:
+
+```bash
+./twitcast_bot croned
+```
+
+For normal use, those are the same kind of mode:
+
+- no frontend
+- only scheduled recording
+
+### 4. One-stream test mode
+
+```bash
+./twitcast_bot direct --streamer=azusa_shirokyan --retries=10 --retry-backoff=1m
+```
+
+Use this only when you want to test a single streamer directly.
 
 `--addr` is the correct flag for web mode.
 
@@ -291,6 +335,36 @@ Default behavior:
 - the default API endpoint is `https://api.telegram.org`
 - only switch to a local Bot API server if you intentionally change the API endpoint
 
+### Why some users self-host Telegram Bot API
+
+Telegram's official local Bot API server documentation currently states that local mode allows:
+
+- unlimited file downloads
+- uploads up to `2000 MB`
+- HTTP webhook usage
+- arbitrary local IPs and ports for webhooks
+
+The same official README also says the local server listens on port `8081` by default and requires `--api-id` and `--api-hash`.
+
+That is why some users self-host it:
+
+- they need much larger file uploads
+- they want the Bot API server inside the same VPS or local network
+- they want local HTTP instead of public HTTPS restrictions
+
+Sources:
+
+- https://github.com/tdlib/telegram-bot-api
+- https://tdlib.github.io/telegram-bot-api/build.html
+
+### Why this project does not require self-hosting by default
+
+For most beginners:
+
+- `https://api.telegram.org` is enough to get started
+- self-hosting adds more installation and maintenance work
+- you usually only need self-hosting when you hit file-size or infrastructure limits
+
 If Telegram upload is enabled:
 
 - `telegram.json` needs a valid `bot_token`
@@ -299,6 +373,32 @@ If Telegram upload is enabled:
 
 If `api_endpoint` points to `http://127.0.0.1:8081`, you must also run a local Telegram Bot API service on the VPS.
 One supported local server implementation is `tdlib/telegram-bot-api`.
+
+### Quick self-host overview
+
+The official `tdlib/telegram-bot-api` README shows a build flow like:
+
+```bash
+git clone --recursive https://github.com/tdlib/telegram-bot-api.git
+cd telegram-bot-api
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . --target install
+```
+
+The same official README says the minimum required startup parameters are:
+
+```bash
+telegram-bot-api --api-id <your_api_id> --api-hash <your_api_hash> --local
+```
+
+Important beginner notes:
+
+1. `api_id` and `api_hash` are not the same as a Bot Token.
+2. The local Bot API server uses HTTP and normally listens on `8081`.
+3. Telegram's official README says you should call `logOut` before moving a bot from `https://api.telegram.org` to a local server.
+4. If you expose the local server remotely, you must handle reverse proxy and TLS yourself.
 
 ## Updating On A VPS
 

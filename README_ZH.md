@@ -71,6 +71,19 @@ sudo apt update
 sudo apt install -y git golang-go ffmpeg
 ```
 
+如果你想讓程式在 VPS 上背景常駐、自動重啟，建議再裝：
+
+- `nodejs`
+- `npm`
+- `pm2`
+
+Ubuntu 可以再打：
+
+```bash
+sudo apt install -y nodejs npm
+sudo npm install pm2@latest -g
+```
+
 ## 安裝
 
 ```bash
@@ -177,39 +190,92 @@ Windows 使用時要注意：
 
 ## 啟動方式
 
-預設排程錄影模式：
+這段如果你看不懂，可以直接先記一個結論：
+
+- **大多數新手只需要用 Web 管理頁模式**
+- 也就是最常用的是這條：
 
 ```bash
-./twitcast_bot
+TWITCAST_WEB_USERNAME=你自己要的帳號 \
+TWITCAST_WEB_PASSWORD='你自己要的密碼' \
+./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
 ```
 
-明確指定排程模式：
+這條的意思拆開來看：
+
+- `TWITCAST_WEB_USERNAME`
+  你自己設定的前端登入帳號
+- `TWITCAST_WEB_PASSWORD`
+  你自己設定的前端登入密碼
+- `web`
+  啟動前端管理頁
+- `--addr 127.0.0.1:8080`
+  讓網站開在這台機器的 `127.0.0.1:8080`
+- `--auto-start`
+  管理頁啟動時，順便把錄影器一起啟動
+
+你可以把幾種模式理解成：
+
+### 1. 最常用：前端管理頁模式
 
 ```bash
-./twitcast_bot croned
+TWITCAST_WEB_USERNAME=你自己要的帳號 \
+TWITCAST_WEB_PASSWORD='你自己要的密碼' \
+./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
 ```
 
-直接錄單一直播：
+適合：
 
-```bash
-./twitcast_bot direct --streamer=azusa_shirokyan --retries=10 --retry-backoff=1m
-```
+- 你想用前端管理
+- 你想在網頁裡設定直播主、Discord、Telegram
+- 你想一打開管理頁就順便開始排程錄影
 
-啟動 Web 管理頁：
+### 2. 只有開前端，不自動啟動錄影器
 
 ```bash
 ./twitcast_bot web --addr 127.0.0.1:8080
 ```
 
-若要啟用內建驗證：
+適合：
+
+- 你只想先打開前端看看
+- 你想進前端先改設定，再手動按 `Start Recorder`
+
+### 3. 純命令列排程錄影模式
 
 ```bash
-TWITCAST_WEB_USERNAME=admin \
-TWITCAST_WEB_PASSWORD='change-this-now' \
-./twitcast_bot web --addr 127.0.0.1:8080 --auto-start
+./twitcast_bot
 ```
 
-Web mode 正確使用的旗標是 `--addr`。
+或：
+
+```bash
+./twitcast_bot croned
+```
+
+這兩條在一般使用上可以理解成同一類：
+
+- 不開前端
+- 只跑排程錄影
+
+如果你是新手，通常不用先學這個，先用前端模式就好。
+
+### 4. 只錄單一直播的測試模式
+
+```bash
+./twitcast_bot direct --streamer=azusa_shirokyan --retries=10 --retry-backoff=1m
+```
+
+適合：
+
+- 你只是想臨時測一個直播主
+- 你不是要跑長期排程
+
+補充說明：
+
+- `127.0.0.1:8080` 的意思是只在本機開這個頁面
+- 如果你是 VPS，通常會再透過 Nginx、OpenResty、Caddy、Tailscale 或 SSH tunnel 轉出去
+- `web` 模式正確使用的旗標是 `--addr`
 
 ## 設定檔
 
@@ -297,6 +363,35 @@ LinuxTwitcast 在 Discord 內主要做兩件事：
 - 專案預設會連 `https://api.telegram.org`
 - 只有當你自己把 API 位址改成本地服務時，才需要另外架 `tdlib/telegram-bot-api`
 
+### 為什麼有人會選擇自架 Telegram Bot API
+
+Telegram 官方文件目前列出的差異是：
+
+- 官方 Bot API：下載上限 `20MB`、上傳上限 `50MB`
+- 本地 Bot API：下載不限大小、上傳可到 `2000MB`
+- 官方 Bot API：Webhook 需要 HTTPS，而且只能用特定連接埠
+- 本地 Bot API：可用 HTTP、任意連接埠、較大的 `max_webhook_connections`
+
+所以會選擇自架，通常是因為：
+
+- 你要傳很大的錄影檔
+- 你想把 Bot API 放在內網或同一台 VPS 上
+- 你想用本地 HTTP，不想另外處理外部 HTTPS 限制
+- 你需要本地模式的一些額外能力
+
+這些差異來自 Telegram 官方與官方 open-source server 文件：
+
+- https://core.telegram.org/bots/features
+- https://github.com/tdlib/telegram-bot-api
+
+### 為什麼這個專案預設不強制你自架
+
+因為對大多數新手來說：
+
+- 官方 `https://api.telegram.org` 就能先用
+- 架本地 Bot API 服務會多一套安裝與維運成本
+- 除非你真的遇到檔案大小或部署需求，不然先不要加複雜度
+
 如果開啟 Telegram 上傳：
 
 - `telegram.json` 必須有有效的 `bot_token`
@@ -305,6 +400,49 @@ LinuxTwitcast 在 Discord 內主要做兩件事：
 
 如果 `api_endpoint` 指向 `http://127.0.0.1:8081`，代表你還需要在 VPS 上另外啟動本地 Telegram Bot API 服務。
 可用的一個本地實作就是 `tdlib/telegram-bot-api`。
+
+### 如果你要自架，最簡單怎麼做
+
+Telegram 官方 `tdlib/telegram-bot-api` 文件目前要求至少準備：
+
+- `api_id`
+- `api_hash`
+- Bot API server 本體
+
+官方 build 入口：
+
+- https://github.com/tdlib/telegram-bot-api
+- https://tdlib.github.io/telegram-bot-api/build.html
+
+官方 README 的基本 build 流程大致是：
+
+```bash
+git clone --recursive https://github.com/tdlib/telegram-bot-api.git
+cd telegram-bot-api
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . --target install
+```
+
+啟動時，官方 README 指出至少要提供：
+
+```bash
+telegram-bot-api --api-id <你的api_id> --api-hash <你的api_hash> --local
+```
+
+幾個你一定要知道的點：
+
+1. `api_id` / `api_hash` 不是 Bot Token
+   這兩個要另外向 Telegram 申請。
+2. 本地 Bot API 預設跑在 `8081`
+3. 你把 Bot 從官方 API 切到本地 API 前，官方文件要求先呼叫 `logOut`
+4. 這台本地 Bot API 只收 HTTP；如果你要對外暴露，還要自己做 TLS / 反向代理
+
+如果你的目標只是先把 LinuxTwitcast 跑起來，我建議：
+
+1. 先用官方 `https://api.telegram.org`
+2. 真的遇到大檔案或架構需求，再改成自架
 
 ## VPS 更新指令
 
