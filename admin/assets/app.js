@@ -2,13 +2,267 @@ const ui = {};
 const fileState = { root: "", path: "" };
 const THEME_STORAGE_KEY = "twitcast-theme";
 const HIDE_OFFLINE_LOGS_STORAGE_KEY = "twitcast-hide-offline-logs";
+const langState = { value: "EN" };
 const themeState = { value: "dark" };
-const logState = { lines: [], hideOffline: true, filteredCount: 0 };
+const logState = { lines: [], hideOffline: true, filteredCount: 0, loaded: false };
+const appState = { status: null, files: null };
 let botRestartPending = false;
 let toastTimer = null;
 
+const I18N = {
+    EN: {
+        "document.title": "TwitCasting VPS Console",
+        "hero.eyebrow": "Headless Linux Control Room",
+        "hero.title": "TwitCasting Recorder Console",
+        "hero.lede": "Manage recording, notifications, files, and update checks from a single web console designed for Ubuntu VPS deployments.",
+        "actions.refresh": "Refresh",
+        "actions.save": "Save Settings",
+        "actions.startRecorder": "Start Recorder",
+        "actions.stopRecorder": "Stop Recorder",
+        "actions.restartRecorder": "Restart Recorder",
+        "actions.restartBot": "Restart Bot",
+        "theme.useLight": "Use Light Theme",
+        "theme.useDark": "Use Dark Theme",
+        "theme.ariaLight": "Switch to light theme",
+        "theme.ariaDark": "Switch to dark theme",
+        "status.section": "Service Status",
+        "status.activeRecordings": "Active Recordings",
+        "status.noActiveRecordings": "No active recordings.",
+        "status.running": "Running",
+        "status.stopped": "Stopped",
+        "status.stopping": "Stopping",
+        "status.untitledStream": "Untitled stream",
+        "system.section": "System Info",
+        "system.checkUpdates": "Check for Updates",
+        "system.diagnostics": "Diagnostics",
+        "system.diagnosticsPending": "Diagnostics have not been loaded yet.",
+        "system.version": "Version",
+        "system.gitCommit": "Git Commit",
+        "system.osArch": "OS / Arch",
+        "system.workingDirectory": "Working Directory",
+        "system.executable": "Executable",
+        "system.listen": "Listen",
+        "system.ffmpeg": "FFmpeg",
+        "system.builtInAuth": "Built-in Auth",
+        "system.notFound": "Not found",
+        "system.noDiagnostics": "No diagnostics require attention right now.",
+        "system.checking": "Checking...",
+        "system.redirecting": "A newer build is available. Redirecting to the repository...",
+        "system.upToDate": "This build already matches origin/main.",
+        "settings.section": "General & Streamer Settings",
+        "settings.addStreamer": "Add Streamer",
+        "settings.recorderLanguage": "Recorder Language",
+        "settings.langEnglish": "English",
+        "settings.langChinese": "Traditional Chinese",
+        "settings.mirrorLogs": "Mirror logs to `app.log`",
+        "table.enabled": "Enabled",
+        "table.screenId": "Screen ID",
+        "table.schedule": "Schedule",
+        "table.targetFolder": "Target Folder",
+        "table.name": "Name",
+        "table.type": "Type",
+        "table.size": "Size",
+        "table.modified": "Modified",
+        "discord.section": "Discord Notifications",
+        "discord.testButton": "Send Test Message",
+        "discord.enabled": "Enable Discord notifications",
+        "discord.botToken": "Bot Token",
+        "discord.guildId": "Guild ID",
+        "discord.notifyChannel": "Notify Channel ID",
+        "discord.archiveChannel": "Archive Channel ID",
+        "discord.tagRole": "Mention the per-streamer role when a stream starts",
+        "discord.sending": "Sending...",
+        "discord.sent": "Discord test message sent.",
+        "telegram.section": "Telegram & Conversion",
+        "telegram.testButton": "Send Test Message",
+        "telegram.enabled": "Enable Telegram upload",
+        "telegram.botToken": "Bot Token",
+        "telegram.chatId": "Chat ID",
+        "telegram.apiEndpoint": "API Endpoint",
+        "telegram.convertToM4A": "Extract M4A audio after each recording",
+        "telegram.keepOriginal": "Keep the original TS file after conversion",
+        "telegram.sending": "Sending...",
+        "telegram.sent": "Telegram test message sent.",
+        "files.section": "File Manager",
+        "files.upOneLevel": "Up One Level",
+        "files.root": "Root",
+        "files.notCreatedYet": "not created yet",
+        "files.empty": "This folder is currently empty.",
+        "files.upload": "Upload",
+        "files.uploading": "Uploading...",
+        "files.uploadConfirm": "Upload {name} to Telegram now?",
+        "files.uploaded": "{name} was uploaded to Telegram as {mode}.",
+        "files.download": "Download",
+        "files.delete": "Delete",
+        "files.deleteConfirm": "Delete {name}?",
+        "files.deleted": "{name} was deleted.",
+        "files.methodAudio": "audio",
+        "files.methodDocument": "document",
+        "logs.section": "Live Logs",
+        "logs.hideOffline": "Hide offline polling",
+        "logs.noUseful": "No useful log lines remain in the latest window. {count} offline polling entries were hidden. Disable the filter to inspect the raw output.",
+        "logs.noLines": "No log lines are available right now.",
+        "logs.raw": "Showing raw live logs.",
+        "logs.filterEnabled": "Offline polling filter is enabled.",
+        "logs.filteredCount": "{count} offline polling log lines are hidden.",
+        "metrics.enabledStreamers": "Enabled Streamers",
+        "metrics.scheduledJobs": "Scheduled Jobs",
+        "metrics.activeRecordings": "Active Recordings",
+        "metrics.uptime": "Uptime",
+        "metrics.latestError": "Latest Error",
+        "metrics.notStarted": "Not started",
+        "streamers.none": "No streamers are configured yet. Use \"Add Streamer\" to create one.",
+        "streamers.placeholderFolder": "Recordings/streamer-name",
+        "streamers.remove": "Remove",
+        "save.saved": "Settings saved.",
+        "save.savedRestartRecommended": "Settings were saved. The recorder is still running, so a restart is recommended before expecting new behavior.",
+        "recorder.start": "start",
+        "recorder.stop": "stop",
+        "recorder.restart": "restart",
+        "recorder.actionCompleted": "Recorder action completed: {action}.",
+        "bot.restartConfirm": "Restart the entire bot process now? The web console and recorder will disconnect briefly.",
+        "bot.restartRequested": "Bot restart requested. The page will reconnect automatically in a few seconds.",
+        "bot.notRecovered": "Bot did not recover within 60 seconds. Check web.log or the process output.",
+        "common.loading": "Loading...",
+        "common.enabled": "Enabled",
+        "common.disabled": "Disabled",
+        "common.requestFailed": "Request failed",
+        "common.unexpectedError": "An unexpected error occurred."
+    },
+    ZH: {
+        "document.title": "TwitCasting VPS 控制台",
+        "hero.eyebrow": "無頭 Linux 控制室",
+        "hero.title": "TwitCasting 錄影管理台",
+        "hero.lede": "在為 Ubuntu VPS 設計的單一管理頁中，集中處理錄影、通知、檔案與更新檢查。",
+        "actions.refresh": "重新整理",
+        "actions.save": "儲存設定",
+        "actions.startRecorder": "啟動錄影器",
+        "actions.stopRecorder": "停止錄影器",
+        "actions.restartRecorder": "重啟錄影器",
+        "actions.restartBot": "重啟 Bot",
+        "theme.useLight": "切換為亮色主題",
+        "theme.useDark": "切換為暗色主題",
+        "theme.ariaLight": "切換為亮色主題",
+        "theme.ariaDark": "切換為暗色主題",
+        "status.section": "服務狀態",
+        "status.activeRecordings": "進行中的錄影",
+        "status.noActiveRecordings": "目前沒有進行中的錄影。",
+        "status.running": "執行中",
+        "status.stopped": "已停止",
+        "status.stopping": "停止中",
+        "status.untitledStream": "未命名直播",
+        "system.section": "系統資訊",
+        "system.checkUpdates": "檢查更新",
+        "system.diagnostics": "診斷資訊",
+        "system.diagnosticsPending": "診斷資訊尚未載入。",
+        "system.version": "版本",
+        "system.gitCommit": "Git Commit",
+        "system.osArch": "作業系統 / 架構",
+        "system.workingDirectory": "工作目錄",
+        "system.executable": "執行檔",
+        "system.listen": "監聽位址",
+        "system.ffmpeg": "FFmpeg",
+        "system.builtInAuth": "內建驗證",
+        "system.notFound": "未找到",
+        "system.noDiagnostics": "目前沒有需要特別注意的診斷項目。",
+        "system.checking": "檢查中...",
+        "system.redirecting": "發現較新的版本，正在跳轉到倉庫頁面...",
+        "system.upToDate": "目前版本已與 origin/main 一致。",
+        "settings.section": "一般與直播主設定",
+        "settings.addStreamer": "新增直播主",
+        "settings.recorderLanguage": "錄影器語言",
+        "settings.langEnglish": "英文",
+        "settings.langChinese": "繁體中文",
+        "settings.mirrorLogs": "同步寫入 `app.log`",
+        "table.enabled": "啟用",
+        "table.screenId": "Screen ID",
+        "table.schedule": "排程",
+        "table.targetFolder": "目標資料夾",
+        "table.name": "名稱",
+        "table.type": "類型",
+        "table.size": "大小",
+        "table.modified": "修改時間",
+        "discord.section": "Discord 通知",
+        "discord.testButton": "發送測試訊息",
+        "discord.enabled": "啟用 Discord 通知",
+        "discord.botToken": "Bot Token",
+        "discord.guildId": "Guild ID",
+        "discord.notifyChannel": "通知頻道 ID",
+        "discord.archiveChannel": "歸檔頻道 ID",
+        "discord.tagRole": "直播開始時提及該直播主的專屬身分組",
+        "discord.sending": "發送中...",
+        "discord.sent": "Discord 測試訊息已送出。",
+        "telegram.section": "Telegram 與轉檔",
+        "telegram.testButton": "發送測試訊息",
+        "telegram.enabled": "啟用 Telegram 上傳",
+        "telegram.botToken": "Bot Token",
+        "telegram.chatId": "Chat ID",
+        "telegram.apiEndpoint": "API Endpoint",
+        "telegram.convertToM4A": "每次錄影後抽取 M4A 音訊",
+        "telegram.keepOriginal": "轉檔後保留原始 TS 檔",
+        "telegram.sending": "發送中...",
+        "telegram.sent": "Telegram 測試訊息已送出。",
+        "files.section": "檔案管理",
+        "files.upOneLevel": "回上一層",
+        "files.root": "根目錄",
+        "files.notCreatedYet": "尚未建立",
+        "files.empty": "這個資料夾目前是空的。",
+        "files.upload": "上傳",
+        "files.uploading": "上傳中...",
+        "files.uploadConfirm": "現在要把 {name} 上傳到 Telegram 嗎？",
+        "files.uploaded": "{name} 已作為 {mode} 上傳到 Telegram。",
+        "files.download": "下載",
+        "files.delete": "刪除",
+        "files.deleteConfirm": "確定要刪除 {name} 嗎？",
+        "files.deleted": "{name} 已刪除。",
+        "files.methodAudio": "音訊",
+        "files.methodDocument": "文件",
+        "logs.section": "即時日誌",
+        "logs.hideOffline": "隱藏離線輪詢",
+        "logs.noUseful": "最新視窗內沒有可用的日誌行。已隱藏 {count} 筆離線輪詢訊息，如需查看原始輸出請關閉過濾。",
+        "logs.noLines": "目前沒有可顯示的日誌行。",
+        "logs.raw": "目前顯示原始即時日誌。",
+        "logs.filterEnabled": "已啟用離線輪詢過濾。",
+        "logs.filteredCount": "已隱藏 {count} 筆離線輪詢日誌。",
+        "metrics.enabledStreamers": "已啟用直播主",
+        "metrics.scheduledJobs": "排程數量",
+        "metrics.activeRecordings": "錄影中數量",
+        "metrics.uptime": "運行時間",
+        "metrics.latestError": "最近錯誤",
+        "metrics.notStarted": "尚未啟動",
+        "streamers.none": "目前尚未設定任何直播主，請使用「新增直播主」建立一筆。",
+        "streamers.placeholderFolder": "錄影/直播主名稱",
+        "streamers.remove": "移除",
+        "save.saved": "設定已儲存。",
+        "save.savedRestartRecommended": "設定已儲存，但錄影器仍在執行中；若要套用新行為，建議先重啟錄影器。",
+        "recorder.start": "啟動",
+        "recorder.stop": "停止",
+        "recorder.restart": "重啟",
+        "recorder.actionCompleted": "錄影器操作已完成：{action}。",
+        "bot.restartConfirm": "現在要重啟整個 Bot 行程嗎？管理頁與錄影器會暫時中斷。",
+        "bot.restartRequested": "已送出 Bot 重啟要求，頁面會在幾秒內自動重新連線。",
+        "bot.notRecovered": "Bot 在 60 秒內尚未恢復，請檢查 web.log 或程序輸出。",
+        "common.loading": "載入中...",
+        "common.enabled": "啟用",
+        "common.disabled": "停用",
+        "common.requestFailed": "請求失敗",
+        "common.unexpectedError": "發生未預期的錯誤。"
+    }
+};
+
+function normalizeLanguage(language) {
+    return language === "ZH" ? "ZH" : "EN";
+}
+
+function t(key, params = {}) {
+    const language = I18N[langState.value] ? langState.value : "EN";
+    const template = I18N[language][key] ?? I18N.EN[key] ?? key;
+    return template.replace(/\{(\w+)\}/g, (_, name) => String(params[name] ?? ""));
+}
+
 window.addEventListener("DOMContentLoaded", () => {
     cacheElements();
+    applyLanguage("EN");
     initTheme();
     initLogFilters();
     bindEvents();
@@ -64,6 +318,33 @@ function cacheElements() {
     ui.toast = document.getElementById("toast");
 }
 
+// 語言切換需要同時更新靜態標籤與目前畫面上的動態內容，避免只存設定但畫面不變。
+function applyLanguage(language) {
+    langState.value = normalizeLanguage(language);
+    document.documentElement.lang = langState.value === "ZH" ? "zh-Hant" : "en";
+    document.title = t("document.title");
+
+    document.querySelectorAll("[data-i18n]").forEach((element) => {
+        element.textContent = t(element.dataset.i18n);
+    });
+
+    applyTheme(themeState.value);
+
+    if (appState.status) {
+        renderStatus(appState.status);
+    } else {
+        ui.statusBadge.textContent = t("common.loading");
+        ui.activeRecordings.textContent = t("status.noActiveRecordings");
+        ui.diagnostics.textContent = t("system.diagnosticsPending");
+    }
+
+    if (appState.files) {
+        renderFiles(appState.files);
+    }
+
+    renderLogs();
+}
+
 function bindEvents() {
     ui.themeToggleBtn.addEventListener("click", toggleTheme);
     ui.refreshBtn.addEventListener("click", () => refreshAll().catch(handleError));
@@ -81,6 +362,7 @@ function bindEvents() {
     ui.fileRefreshBtn.addEventListener("click", () => browseFiles(fileState.root, fileState.path).catch(handleError));
     ui.logsRefreshBtn.addEventListener("click", () => loadLogs().catch(handleError));
     ui.hideOfflineLogsInput.addEventListener("change", handleOfflineLogFilterChange);
+    ui.langInput.addEventListener("change", () => applyLanguage(ui.langInput.value));
 }
 
 // Theme needs to be applied before the first full paint to avoid a flash of the wrong palette.
@@ -111,8 +393,8 @@ function applyTheme(theme) {
 
     if (ui.themeToggleBtn) {
         const isDark = nextTheme === "dark";
-        ui.themeToggleBtn.textContent = isDark ? "Use Light Theme" : "Use Dark Theme";
-        ui.themeToggleBtn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+        ui.themeToggleBtn.textContent = isDark ? t("theme.useLight") : t("theme.useDark");
+        ui.themeToggleBtn.setAttribute("aria-label", isDark ? t("theme.ariaLight") : t("theme.ariaDark"));
         ui.themeToggleBtn.setAttribute("aria-pressed", String(isDark));
     }
 
@@ -165,13 +447,14 @@ async function api(url, options = {}) {
     const contentType = response.headers.get("content-type") || "";
     const payload = contentType.includes("application/json") ? await response.json() : null;
     if (!response.ok) {
-        throw new Error(payload?.error || response.statusText || "Request failed");
+        throw new Error(payload?.error || response.statusText || t("common.requestFailed"));
     }
     return payload;
 }
 
 async function loadStatus() {
     const data = await api("/api/status");
+    appState.status = data;
     renderStatus(data);
     renderFileRoots(data.file_roots || []);
 
@@ -201,18 +484,25 @@ async function loadLogs() {
     const data = await api(`/api/logs?${params.toString()}`);
     logState.lines = Array.isArray(data.lines) ? data.lines : [];
     logState.filteredCount = Number.isFinite(data.filtered_count) ? data.filtered_count : 0;
+    logState.loaded = true;
     renderLogs();
 }
 
 // Filter offline polling on the backend first so noisy lines do not push useful logs out of the latest window.
 function renderLogs() {
+    if (!logState.loaded) {
+        ui.logsSummary.textContent = "";
+        ui.logsPanel.textContent = t("common.loading");
+        return;
+    }
+
     ui.logsSummary.textContent = buildLogSummary();
 
     if (!logState.lines.length) {
         if (logState.hideOffline && logState.filteredCount > 0) {
-            ui.logsPanel.textContent = `No useful log lines remain in the latest window. ${logState.filteredCount} offline polling entries were hidden. Disable the filter to inspect the raw output.`;
+            ui.logsPanel.textContent = t("logs.noUseful", { count: logState.filteredCount });
         } else {
-            ui.logsPanel.textContent = "No log lines are available right now.";
+            ui.logsPanel.textContent = t("logs.noLines");
         }
     } else {
         ui.logsPanel.textContent = logState.lines.join("\n");
@@ -222,12 +512,12 @@ function renderLogs() {
 
 function buildLogSummary() {
     if (!logState.hideOffline) {
-        return "Showing raw live logs.";
+        return t("logs.raw");
     }
     if (logState.filteredCount <= 0) {
-        return "Offline polling filter is enabled.";
+        return t("logs.filterEnabled");
     }
-    return `${logState.filteredCount} offline polling log lines are hidden.`;
+    return t("logs.filteredCount", { count: logState.filteredCount });
 }
 
 function renderStatus(data) {
@@ -236,13 +526,13 @@ function renderStatus(data) {
     const diagnostics = data.diagnostics || [];
 
     ui.statusBadge.className = `badge ${recorder.stopping ? "stopping" : recorder.running ? "running" : "stopped"}`;
-    ui.statusBadge.textContent = recorder.stopping ? "Stopping" : recorder.running ? "Running" : "Stopped";
+    ui.statusBadge.textContent = recorder.stopping ? t("status.stopping") : recorder.running ? t("status.running") : t("status.stopped");
 
     const metrics = [
-        ["Enabled Streamers", recorder.enabled_streamers ?? 0],
-        ["Scheduled Jobs", recorder.scheduled_jobs ?? 0],
-        ["Active Recordings", (recorder.active_recordings || []).length],
-        ["Uptime", recorder.uptime || "Not started"]
+        [t("metrics.enabledStreamers"), recorder.enabled_streamers ?? 0],
+        [t("metrics.scheduledJobs"), recorder.scheduled_jobs ?? 0],
+        [t("metrics.activeRecordings"), (recorder.active_recordings || []).length],
+        [t("metrics.uptime"), recorder.uptime || t("metrics.notStarted")]
     ];
     ui.recorderSummary.innerHTML = "";
     metrics.forEach(([label, value]) => {
@@ -255,13 +545,13 @@ function renderStatus(data) {
     if (recorder.last_error) {
         const item = document.createElement("div");
         item.className = "metric";
-        item.innerHTML = `<span>Latest Error</span><strong>${escapeHtml(recorder.last_error)}</strong>`;
+        item.innerHTML = `<span>${t("metrics.latestError")}</span><strong>${escapeHtml(recorder.last_error)}</strong>`;
         ui.recorderSummary.appendChild(item);
     }
 
     ui.activeRecordings.innerHTML = "";
     if (!recorder.active_recordings?.length) {
-        ui.activeRecordings.textContent = "No active recordings.";
+        ui.activeRecordings.textContent = t("status.noActiveRecordings");
     } else {
         recorder.active_recordings.forEach((entry) => {
             const item = document.createElement("div");
@@ -269,7 +559,7 @@ function renderStatus(data) {
             item.innerHTML = `
                 <strong>${escapeHtml(entry.streamer_name || entry.streamer)}</strong>
                 <div class="muted-text mono">${escapeHtml(entry.streamer)}</div>
-                <div>${escapeHtml(entry.title || "Untitled stream")}</div>
+                <div>${escapeHtml(entry.title || t("status.untitledStream"))}</div>
                 <div class="muted-text mono">${escapeHtml(entry.filename || "")}</div>
             `;
             ui.activeRecordings.appendChild(item);
@@ -278,14 +568,14 @@ function renderStatus(data) {
 
     ui.runtimeInfo.innerHTML = "";
     [
-        ["Version", runtime.version || "null"],
-        ["Git Commit", runtime.git_commit || "-"],
-        ["OS / Arch", `${runtime.os || "-"} / ${runtime.arch || "-"}`],
-        ["Working Directory", runtime.working_directory || "-"],
-        ["Executable", runtime.executable || "-"],
-        ["Listen", runtime.listen_address || "-"],
-        ["FFmpeg", runtime.ffmpeg_path || "Not found"],
-        ["Built-in Auth", runtime.auth_enabled ? "Enabled" : "Disabled"]
+        [t("system.version"), runtime.version || "null"],
+        [t("system.gitCommit"), runtime.git_commit || "-"],
+        [t("system.osArch"), `${runtime.os || "-"} / ${runtime.arch || "-"}`],
+        [t("system.workingDirectory"), runtime.working_directory || "-"],
+        [t("system.executable"), runtime.executable || "-"],
+        [t("system.listen"), runtime.listen_address || "-"],
+        [t("system.ffmpeg"), runtime.ffmpeg_path || t("system.notFound")],
+        [t("system.builtInAuth"), runtime.auth_enabled ? t("common.enabled") : t("common.disabled")]
     ].forEach(([label, value]) => {
         const dt = document.createElement("dt");
         dt.textContent = label;
@@ -296,7 +586,7 @@ function renderStatus(data) {
 
     ui.diagnostics.innerHTML = "";
     if (!diagnostics.length) {
-        ui.diagnostics.textContent = "No diagnostics require attention right now.";
+        ui.diagnostics.textContent = t("system.noDiagnostics");
     } else {
         diagnostics.forEach((item) => {
             const box = document.createElement("div");
@@ -312,6 +602,7 @@ function renderStatus(data) {
 
 function renderSettings(settings) {
     ui.langInput.value = settings.app?.lang || "EN";
+    applyLanguage(ui.langInput.value);
     ui.enableLogInput.checked = Boolean(settings.app?.enable_log);
     renderStreamers(settings.app?.streamers || []);
 
@@ -335,7 +626,7 @@ function renderStreamers(streamers) {
 
     if (!streamers.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="5" class="muted-text">No streamers are configured yet. Use “Add Streamer” to create one.</td>`;
+        row.innerHTML = `<td colspan="5" class="muted-text">${escapeHtml(t("streamers.none"))}</td>`;
         ui.streamersBody.appendChild(row);
         return;
     }
@@ -352,8 +643,8 @@ function createStreamerRow(streamer = {}) {
         <td><input type="checkbox" data-field="enabled"></td>
         <td><input type="text" data-field="screen-id" placeholder="mielu_ii"></td>
         <td><input type="text" data-field="schedule" placeholder="@every 5s"></td>
-        <td><input type="text" data-field="folder" placeholder="Recordings/streamer-name"></td>
-        <td class="actions-cell"><button type="button" class="small danger">Remove</button></td>
+        <td><input type="text" data-field="folder" placeholder="${escapeHtml(t("streamers.placeholderFolder"))}"></td>
+        <td class="actions-cell"><button type="button" class="small danger">${escapeHtml(t("streamers.remove"))}</button></td>
     `;
 
     row.querySelector('[data-field="enabled"]').checked = Boolean(streamer.enabled ?? true);
@@ -388,44 +679,49 @@ async function saveSettings() {
     if (response.warning) {
         showToast(response.warning, true);
     } else {
-        showToast(response.needs_restart ? "Settings were saved. The recorder is still running, so a restart is recommended before expecting new behavior." : "Settings saved.");
+        showToast(response.needs_restart ? t("save.savedRestartRecommended") : t("save.saved"));
     }
     await refreshAll();
 }
 
 // Test actions use the current form values so users can validate credentials before saving them to disk.
 async function sendDiscordTest() {
-    await runButtonAction(ui.discordTestBtn, "Sending...", async () => {
+    await runButtonAction(ui.discordTestBtn, t("discord.sending"), async () => {
         const payload = collectDiscordSettings();
         await api("/api/discord/test", {
             method: "POST",
             body: JSON.stringify(payload)
         });
-        showToast("Discord test message sent.");
+        showToast(t("discord.sent"));
     });
 }
 
 async function sendTelegramTest() {
-    await runButtonAction(ui.telegramTestBtn, "Sending...", async () => {
+    await runButtonAction(ui.telegramTestBtn, t("telegram.sending"), async () => {
         const payload = collectTelegramSettings();
         await api("/api/telegram/test", {
             method: "POST",
             body: JSON.stringify(payload)
         });
-        showToast("Telegram test message sent.");
+        showToast(t("telegram.sent"));
     });
 }
 
 async function checkForUpdates() {
-    await runButtonAction(ui.checkVersionBtn, "Checking...", async () => {
+    await runButtonAction(ui.checkVersionBtn, t("system.checking"), async () => {
         const result = await api("/api/version/check");
         if (result.update_available && result.repo_url) {
-            showToast("A newer build is available. Redirecting to the repository...");
+            showToast(t("system.redirecting"));
             window.location.href = result.repo_url;
             return;
         }
 
-        showToast(result.message || "This build already matches origin/main.");
+        if (!result.update_available && (result.current_commit || result.latest_commit)) {
+            showToast(t("system.upToDate"));
+            return;
+        }
+
+        showToast(result.message || t("system.upToDate"));
     });
 }
 
@@ -488,19 +784,19 @@ function collectTelegramSettings() {
 
 async function controlRecorder(action) {
     await api(`/api/recorder/${action}`, { method: "POST" });
-    showToast(`Recorder action completed: ${action}.`);
+    showToast(t("recorder.actionCompleted", { action: t(`recorder.${action}`) }));
     await Promise.all([loadStatus(), loadLogs()]);
 }
 
 async function restartBot() {
-    if (!window.confirm("Restart the entire bot process now? The web console and recorder will disconnect briefly.")) {
+    if (!window.confirm(t("bot.restartConfirm"))) {
         return;
     }
 
     botRestartPending = true;
     ui.restartBotBtn.disabled = true;
     await api("/api/bot/restart", { method: "POST" });
-    showToast("Bot restart requested. The page will reconnect automatically in a few seconds.");
+    showToast(t("bot.restartRequested"));
     waitForBotRecovery();
 }
 
@@ -520,7 +816,7 @@ function waitForBotRecovery() {
         if (Date.now() - startedAt >= 60000) {
             botRestartPending = false;
             ui.restartBotBtn.disabled = false;
-            showToast("Bot did not recover within 60 seconds. Check web.log or the process output.", true);
+            showToast(t("bot.notRecovered"), true);
             return;
         }
 
@@ -541,7 +837,7 @@ function renderFileRoots(roots) {
     roots.forEach((root) => {
         const option = document.createElement("option");
         option.value = root.root;
-        option.textContent = root.exists ? `${root.label} · ${root.root}` : `${root.label} · ${root.root} (not created yet)`;
+        option.textContent = root.exists ? `${root.label} · ${root.root}` : `${root.label} · ${root.root} (${t("files.notCreatedYet")})`;
         ui.fileRootSelect.appendChild(option);
     });
 
@@ -558,6 +854,11 @@ async function browseFiles(root, path) {
     }
 
     const data = await api(`/api/files?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path || "")}`);
+    appState.files = data;
+    renderFiles(data);
+}
+
+function renderFiles(data) {
     fileState.root = data.root;
     fileState.path = data.path || "";
     ui.fileRootSelect.value = data.root;
@@ -567,7 +868,7 @@ async function browseFiles(root, path) {
     ui.filesBody.innerHTML = "";
     if (!data.entries?.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="5" class="muted-text">This folder is currently empty.</td>`;
+        row.innerHTML = `<td colspan="5" class="muted-text">${escapeHtml(t("files.empty"))}</td>`;
         ui.filesBody.appendChild(row);
         return;
     }
@@ -607,22 +908,22 @@ function createFileRow(entry) {
         const uploadButton = document.createElement("button");
         uploadButton.type = "button";
         uploadButton.className = "table-link";
-        uploadButton.textContent = actionsCell.childNodes.length ? " / Upload" : "Upload";
+        uploadButton.textContent = prefixedActionLabel(actionsCell.childNodes.length > 0, t("files.upload"));
         uploadButton.addEventListener("click", async () => {
-            if (!window.confirm(`Upload ${entry.name} to Telegram now?`)) {
+            if (!window.confirm(t("files.uploadConfirm", { name: entry.name }))) {
                 return;
             }
 
             const originalLabel = uploadButton.textContent;
             uploadButton.disabled = true;
-            uploadButton.textContent = actionsCell.childNodes.length ? " / Uploading..." : "Uploading...";
+            uploadButton.textContent = prefixedActionLabel(actionsCell.childNodes.length > 0, t("files.uploading"));
             try {
                 const result = await api("/api/files/telegram-upload", {
                     method: "POST",
                     body: JSON.stringify({ root: fileState.root, path: entry.path })
                 });
-                const modeLabel = result.method === "audio" ? "audio" : "document";
-                showToast(`${entry.name} was uploaded to Telegram as ${modeLabel}.`);
+                const modeLabel = result.method === "audio" ? t("files.methodAudio") : t("files.methodDocument");
+                showToast(t("files.uploaded", { name: entry.name, mode: modeLabel }));
             } finally {
                 uploadButton.disabled = false;
                 uploadButton.textContent = originalLabel;
@@ -632,7 +933,7 @@ function createFileRow(entry) {
 
         const downloadLink = document.createElement("a");
         downloadLink.className = "table-link";
-        downloadLink.textContent = actionsCell.childNodes.length ? " / Download" : "Download";
+        downloadLink.textContent = prefixedActionLabel(actionsCell.childNodes.length > 0, t("files.download"));
         downloadLink.href = `/api/files/download?root=${encodeURIComponent(fileState.root)}&path=${encodeURIComponent(entry.path)}`;
         downloadLink.setAttribute("download", "");
         actionsCell.appendChild(downloadLink);
@@ -642,16 +943,16 @@ function createFileRow(entry) {
         const deleteButton = document.createElement("button");
         deleteButton.type = "button";
         deleteButton.className = "table-link";
-        deleteButton.textContent = actionsCell.childNodes.length ? " / Delete" : "Delete";
+        deleteButton.textContent = prefixedActionLabel(actionsCell.childNodes.length > 0, t("files.delete"));
         deleteButton.addEventListener("click", async () => {
-            if (!window.confirm(`Delete ${entry.name}?`)) {
+            if (!window.confirm(t("files.deleteConfirm", { name: entry.name }))) {
                 return;
             }
             await api("/api/files/delete", {
                 method: "POST",
                 body: JSON.stringify({ root: fileState.root, path: entry.path })
             });
-            showToast(`${entry.name} was deleted.`);
+            showToast(t("files.deleted", { name: entry.name }));
             await browseFiles(fileState.root, fileState.path);
         });
         actionsCell.appendChild(deleteButton);
@@ -659,6 +960,10 @@ function createFileRow(entry) {
 
     row.append(nameCell, typeCell, sizeCell, modifiedCell, actionsCell);
     return row;
+}
+
+function prefixedActionLabel(hasPrefix, label) {
+    return `${hasPrefix ? " / " : ""}${label}`;
 }
 
 function parentPath(path) {
@@ -709,7 +1014,7 @@ function handleError(error) {
     if (botRestartPending) {
         return;
     }
-    showToast(error.message || "An unexpected error occurred.", true);
+    showToast(error.message || t("common.unexpectedError"), true);
 }
 
 function escapeHtml(value) {

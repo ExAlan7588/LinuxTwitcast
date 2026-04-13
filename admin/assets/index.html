@@ -19,44 +19,44 @@
     <div class="shell">
         <header class="hero">
             <div>
-                <p class="eyebrow">Headless Linux Control Room</p>
-                <h1>TwitCasting Recorder Console</h1>
-                <p class="lede">Manage recording, notifications, files, and update checks from a single web console designed for Ubuntu VPS deployments.</p>
+                <p class="eyebrow" data-i18n="hero.eyebrow">Headless Linux Control Room</p>
+                <h1 data-i18n="hero.title">TwitCasting Recorder Console</h1>
+                <p class="lede" data-i18n="hero.lede">Manage recording, notifications, files, and update checks from a single web console designed for Ubuntu VPS deployments.</p>
             </div>
             <div class="actions">
                 <button id="themeToggleBtn" type="button" class="ghost theme-toggle action-theme">Use Light Theme</button>
-                <button id="refreshBtn" class="ghost action-refresh">Refresh</button>
-                <button id="saveSettingsBtn" class="action-save">Save Settings</button>
-                <button id="startRecorderBtn" class="action-start">Start Recorder</button>
-                <button id="stopRecorderBtn" class="danger action-stop">Stop Recorder</button>
-                <button id="restartRecorderBtn" class="ghost action-restart">Restart Recorder</button>
-                <button id="restartBotBtn" class="danger action-bot">Restart Bot</button>
+                <button id="refreshBtn" class="ghost action-refresh" data-i18n="actions.refresh">Refresh</button>
+                <button id="saveSettingsBtn" class="action-save" data-i18n="actions.save">Save Settings</button>
+                <button id="startRecorderBtn" class="action-start" data-i18n="actions.startRecorder">Start Recorder</button>
+                <button id="stopRecorderBtn" class="danger action-stop" data-i18n="actions.stopRecorder">Stop Recorder</button>
+                <button id="restartRecorderBtn" class="ghost action-restart" data-i18n="actions.restartRecorder">Restart Recorder</button>
+                <button id="restartBotBtn" class="danger action-bot" data-i18n="actions.restartBot">Restart Bot</button>
             </div>
         </header>
 
         <section class="grid grid-top">
             <article class="panel">
                 <div class="section-head">
-                    <h2>Service Status</h2>
+                    <h2 data-i18n="status.section">Service Status</h2>
                     <span id="statusBadge" class="badge muted">Loading</span>
                 </div>
                 <div id="recorderSummary" class="summary-grid"></div>
                 <div class="subsection">
-                    <h3>Active Recordings</h3>
+                    <h3 data-i18n="status.activeRecordings">Active Recordings</h3>
                     <div id="activeRecordings" class="stack muted-text">No active recordings.</div>
                 </div>
             </article>
 
             <article class="panel">
                 <div class="section-head">
-                    <h2>System Info</h2>
+                    <h2 data-i18n="system.section">System Info</h2>
                     <div class="inline-actions">
-                        <button id="checkVersionBtn" class="ghost small" type="button">Check for Updates</button>
+                        <button id="checkVersionBtn" class="ghost small" type="button" data-i18n="system.checkUpdates">Check for Updates</button>
                     </div>
                 </div>
                 <dl id="runtimeInfo" class="runtime-list"></dl>
                 <div class="subsection">
-                    <h3>Diagnostics</h3>
+                    <h3 data-i18n="system.diagnostics">Diagnostics</h3>
                     <div id="diagnostics" class="stack muted-text">Diagnostics have not been loaded yet.</div>
                 </div>
             </article>
@@ -64,20 +64,20 @@
 
         <section class="panel">
             <div class="section-head">
-                <h2>General &amp; Streamer Settings</h2>
-                <button id="addStreamerBtn" class="ghost">Add Streamer</button>
+                <h2 data-i18n="settings.section">General &amp; Streamer Settings</h2>
+                <button id="addStreamerBtn" class="ghost" data-i18n="settings.addStreamer">Add Streamer</button>
             </div>
             <div class="general-grid">
                 <label>
-                    <span>Recorder Language</span>
+                    <span data-i18n="settings.recorderLanguage">Recorder Language</span>
                     <select id="langInput">
-                        <option value="EN">English</option>
-                        <option value="ZH">Traditional Chinese</option>
+                        <option value="EN" data-i18n="settings.langEnglish">English</option>
+                        <option value="ZH" data-i18n="settings.langChinese">Traditional Chinese</option>
                     </select>
                 </label>
                 <label class="checkbox">
                     <input id="enableLogInput" type="checkbox">
-                    <span>Mirror logs to `app.log`</span>
+                    <span data-i18n="settings.mirrorLogs">Mirror logs to `app.log`</span>
                 </label>
             </div>
 
@@ -85,10 +85,10 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Enabled</th>
-                            <th>Screen ID</th>
-                            <th>Schedule</th>
-                            <th>Target Folder</th>
+                            <th data-i18n="table.enabled">Enabled</th>
+                            <th data-i18n="table.screenId">Screen ID</th>
+                            <th data-i18n="table.schedule">Schedule</th>
+                            <th data-i18n="table.targetFolder">Target Folder</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -100,70 +100,70 @@
         <section class="grid grid-settings">
             <article class="panel">
                 <div class="section-head">
-                    <h2>Discord Notifications</h2>
+                    <h2 data-i18n="discord.section">Discord Notifications</h2>
                     <div class="inline-actions">
-                        <button id="discordTestBtn" class="ghost small" type="button">Send Test Message</button>
+                        <button id="discordTestBtn" class="ghost small" type="button" data-i18n="discord.testButton">Send Test Message</button>
                     </div>
                 </div>
                 <div class="form-grid">
                     <label class="checkbox">
                         <input id="discordEnabledInput" type="checkbox">
-                        <span>Enable Discord notifications</span>
+                        <span data-i18n="discord.enabled">Enable Discord notifications</span>
                     </label>
                     <label>
-                        <span>Bot Token</span>
+                        <span data-i18n="discord.botToken">Bot Token</span>
                         <input id="discordTokenInput" type="password" autocomplete="new-password">
                     </label>
                     <label>
-                        <span>Guild ID</span>
+                        <span data-i18n="discord.guildId">Guild ID</span>
                         <input id="discordGuildInput" type="text">
                     </label>
                     <label>
-                        <span>Notify Channel ID</span>
+                        <span data-i18n="discord.notifyChannel">Notify Channel ID</span>
                         <input id="discordNotifyInput" type="text">
                     </label>
                     <label>
-                        <span>Archive Channel ID</span>
+                        <span data-i18n="discord.archiveChannel">Archive Channel ID</span>
                         <input id="discordArchiveInput" type="text">
                     </label>
                     <label class="checkbox">
                         <input id="discordTagRoleInput" type="checkbox">
-                        <span>Mention the per-streamer role when a stream starts</span>
+                        <span data-i18n="discord.tagRole">Mention the per-streamer role when a stream starts</span>
                     </label>
                 </div>
             </article>
 
             <article class="panel">
                 <div class="section-head">
-                    <h2>Telegram &amp; Conversion</h2>
+                    <h2 data-i18n="telegram.section">Telegram &amp; Conversion</h2>
                     <div class="inline-actions">
-                        <button id="telegramTestBtn" class="ghost small" type="button">Send Test Message</button>
+                        <button id="telegramTestBtn" class="ghost small" type="button" data-i18n="telegram.testButton">Send Test Message</button>
                     </div>
                 </div>
                 <div class="form-grid">
                     <label class="checkbox">
                         <input id="telegramEnabledInput" type="checkbox">
-                        <span>Enable Telegram upload</span>
+                        <span data-i18n="telegram.enabled">Enable Telegram upload</span>
                     </label>
                     <label>
-                        <span>Bot Token</span>
+                        <span data-i18n="telegram.botToken">Bot Token</span>
                         <input id="telegramTokenInput" type="password" autocomplete="new-password">
                     </label>
                     <label>
-                        <span>Chat ID</span>
+                        <span data-i18n="telegram.chatId">Chat ID</span>
                         <input id="telegramChatInput" type="text">
                     </label>
                     <label>
-                        <span>API Endpoint</span>
+                        <span data-i18n="telegram.apiEndpoint">API Endpoint</span>
                         <input id="telegramEndpointInput" type="text" placeholder="https://api.telegram.org">
                     </label>
                     <label class="checkbox">
                         <input id="telegramConvertInput" type="checkbox">
-                        <span>Extract M4A audio after each recording</span>
+                        <span data-i18n="telegram.convertToM4A">Extract M4A audio after each recording</span>
                     </label>
                     <label class="checkbox">
                         <input id="telegramKeepInput" type="checkbox">
-                        <span>Keep the original TS file after conversion</span>
+                        <span data-i18n="telegram.keepOriginal">Keep the original TS file after conversion</span>
                     </label>
                 </div>
             </article>
@@ -172,30 +172,30 @@
         <section class="grid grid-bottom">
             <article class="panel">
                 <div class="section-head">
-                    <h2>File Manager</h2>
+                    <h2 data-i18n="files.section">File Manager</h2>
                     <div class="inline-actions">
-                        <button id="fileUpBtn" class="ghost">Up One Level</button>
-                        <button id="fileRefreshBtn" class="ghost">Refresh</button>
+                        <button id="fileUpBtn" class="ghost" data-i18n="files.upOneLevel">Up One Level</button>
+                        <button id="fileRefreshBtn" class="ghost" data-i18n="actions.refresh">Refresh</button>
                     </div>
                 </div>
                 <div class="toolbar">
                     <label>
-                        <span>Root</span>
+                        <span data-i18n="files.root">Root</span>
                         <select id="fileRootSelect"></select>
                     </label>
                     <div id="filePathLabel" class="path-pill">/</div>
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Type</th>
-                                <th>Size</th>
-                                <th>Modified</th>
-                                <th></th>
-                            </tr>
-                        </thead>
+                    <thead>
+                        <tr>
+                            <th data-i18n="table.name">Name</th>
+                            <th data-i18n="table.type">Type</th>
+                            <th data-i18n="table.size">Size</th>
+                            <th data-i18n="table.modified">Modified</th>
+                            <th></th>
+                        </tr>
+                    </thead>
                         <tbody id="filesBody"></tbody>
                     </table>
                 </div>
@@ -203,13 +203,13 @@
 
             <article class="panel">
                 <div class="section-head">
-                    <h2>Live Logs</h2>
+                    <h2 data-i18n="logs.section">Live Logs</h2>
                     <div class="inline-actions log-actions">
                         <label class="checkbox compact-toggle">
                             <input id="hideOfflineLogsInput" type="checkbox" checked>
-                            <span>Hide offline polling</span>
+                            <span data-i18n="logs.hideOffline">Hide offline polling</span>
                         </label>
-                        <button id="logsRefreshBtn" class="ghost">Refresh</button>
+                        <button id="logsRefreshBtn" class="ghost" data-i18n="actions.refresh">Refresh</button>
                     </div>
                 </div>
                 <div id="logsSummary" class="logs-summary muted-text"></div>
