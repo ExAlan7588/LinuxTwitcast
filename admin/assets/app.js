@@ -2,6 +2,7 @@ const ui = {};
 const fileState = { root: "", path: "" };
 const THEME_STORAGE_KEY = "twitcast-theme";
 const HIDE_OFFLINE_LOGS_STORAGE_KEY = "twitcast-hide-offline-logs";
+const LANG_STORAGE_KEY = "twitcast-ui-lang";
 const langState = { value: "EN" };
 const themeState = { value: "dark" };
 const logState = { lines: [], hideOffline: true, filteredCount: 0, loaded: false };
@@ -258,6 +259,14 @@ function normalizeLanguage(language) {
     return language === "ZH" ? "ZH" : "EN";
 }
 
+function readStoredLanguage() {
+    try {
+        return normalizeLanguage(window.localStorage.getItem(LANG_STORAGE_KEY));
+    } catch {
+        return "EN";
+    }
+}
+
 function t(key, params = {}) {
     const language = I18N[langState.value] ? langState.value : "EN";
     const template = I18N[language][key] ?? I18N.EN[key] ?? key;
@@ -266,7 +275,7 @@ function t(key, params = {}) {
 
 window.addEventListener("DOMContentLoaded", () => {
     cacheElements();
-    applyLanguage("EN");
+    applyLanguage(readStoredLanguage());
     initTheme();
     initLogFilters();
     bindEvents();
@@ -327,6 +336,10 @@ function applyLanguage(language) {
     langState.value = normalizeLanguage(language);
     document.documentElement.lang = langState.value === "ZH" ? "zh-Hant" : "en";
     document.title = t("document.title");
+
+    try {
+        window.localStorage.setItem(LANG_STORAGE_KEY, langState.value);
+    } catch {}
 
     document.querySelectorAll("[data-i18n]").forEach((element) => {
         element.textContent = t(element.dataset.i18n);
