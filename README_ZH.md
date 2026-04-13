@@ -28,18 +28,18 @@ Web 管理頁可處理：
 
 ## 平台支援狀態
 
-這個 fork 目前採 **Linux Only Supported** 路線。
+這個 fork 目前採 **Linux 優先、Linux 正式支援** 路線。
 
 - 有支援、也有文件：Linux，尤其是 Ubuntu VPS
-- 不支援、也不再寫使用說明：Windows
+- Windows：僅提供 best-effort 非正式指引
 - 不支援、也不再寫使用說明：macOS
 
 這裡要特別講清楚：
 
-- 目前 Go 原始碼在某些非 Linux 平台上，可能仍然可以編譯。
-- 但這不代表這個 fork 還有維護那些平台。
-- 現在 repo 內所有安裝、更新、部署、排錯流程，都是以 Linux 為前提。
-- 如果你想照 README 無腦操作，請直接用 Ubuntu `24.04 LTS`。
+- Linux 是這個 fork 目前唯一有持續對準與驗證的主路線。
+- 下面會補 Windows 操作方式，但那是非正式、best-effort 路線。
+- 這不代表 Windows 享有和 Linux 一樣的維護、測試、部署保證。
+- 如果你要最穩定、最符合 README 的使用方式，請直接用 Ubuntu `24.04 LTS`。
 
 ## 建議執行環境
 
@@ -102,6 +102,57 @@ http://127.0.0.1:8080
 ```
 
 如果你是遠端 VPS，請先透過反向代理或 SSH tunnel 暴露這個頁面。除非你已經有其他保護，否則不要直接把沒驗證的公開位址暴露出去。
+
+## Windows 快速開始（非正式）
+
+如果你真的想在 Windows 上使用，可以先照這段做。這段是本 repo 的非正式本機使用指引。
+
+建議前提：
+
+- Windows 10 或 Windows 11
+- PowerShell
+- 已安裝 Go
+- 如果要用 Telegram 轉檔，`ffmpeg` 必須安裝並加入 `PATH`
+
+在 PowerShell 內安裝與 build：
+
+```powershell
+git clone https://github.com/ExAlan7588/LinuxTwitcast.git
+cd LinuxTwitcast
+go build -o twitcast_bot.exe .
+```
+
+啟動預設排程錄影模式：
+
+```powershell
+.\twitcast_bot.exe
+```
+
+啟動 Web 管理頁：
+
+```powershell
+.\twitcast_bot.exe web --addr 127.0.0.1:8080
+```
+
+若要啟用內建驗證：
+
+```powershell
+$env:TWITCAST_WEB_USERNAME = "admin"
+$env:TWITCAST_WEB_PASSWORD = "change-this-now"
+.\twitcast_bot.exe web --addr 127.0.0.1:8080 --auto-start
+```
+
+接著打開：
+
+```text
+http://127.0.0.1:8080
+```
+
+Windows 使用時要注意：
+
+- 這不是此 fork 的主要維護目標。
+- repo 內的 VPS / PM2 / systemd 說明仍然是 Linux 專用。
+- 如果 Windows 與 Linux 行為不同，請先以 Linux 路線為準，不要把它直接當成 Linux 部署問題。
 
 ## 啟動方式
 

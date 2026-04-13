@@ -26,17 +26,17 @@ For Telegram users who want to point `telegram.json` at a local Bot API server i
 
 ## Platform Support
 
-This fork is **Linux-only supported**.
+This fork is **Linux-first and Linux-supported**.
 
 - Supported and documented: Linux, especially Ubuntu VPS deployments
-- Not supported and not documented: Windows
+- Best-effort only: Windows
 - Not supported and not documented: macOS
 
 Important clarification for beginners:
 
-- The Go source tree may still compile on non-Linux platforms in some cases.
-- That does **not** mean this fork is maintained for those platforms.
-- All current setup, runtime, update, and troubleshooting guidance in this repository assumes Linux.
+- Linux is the only platform this fork actively targets and validates.
+- Windows instructions below are included as an unofficial convenience path.
+- That does **not** mean Windows receives the same maintenance, testing, or deployment coverage as Linux.
 - If you want the supported path, use Ubuntu `24.04 LTS`.
 
 ## Runtime Target
@@ -100,6 +100,57 @@ http://127.0.0.1:8080
 ```
 
 If you are on a remote VPS, expose it through your reverse proxy or SSH tunnel first. Do not bind a public address without authentication unless you already protect it elsewhere.
+
+## Windows Quick Start (Best-Effort Only)
+
+If you want to run this project on Windows, use this section as an unofficial local-use guide.
+
+Recommended assumptions:
+
+- Windows 10 or Windows 11
+- PowerShell
+- Go installed
+- `ffmpeg` installed and added to `PATH` if you plan to use Telegram conversion
+
+Install and build in PowerShell:
+
+```powershell
+git clone https://github.com/ExAlan7588/LinuxTwitcast.git
+cd LinuxTwitcast
+go build -o twitcast_bot.exe .
+```
+
+Start the default scheduled recorder:
+
+```powershell
+.\twitcast_bot.exe
+```
+
+Start the web console:
+
+```powershell
+.\twitcast_bot.exe web --addr 127.0.0.1:8080
+```
+
+Start the web console with built-in auth:
+
+```powershell
+$env:TWITCAST_WEB_USERNAME = "admin"
+$env:TWITCAST_WEB_PASSWORD = "change-this-now"
+.\twitcast_bot.exe web --addr 127.0.0.1:8080 --auto-start
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8080
+```
+
+Important Windows caveats:
+
+- This path is not the primary maintained target of the fork.
+- VPS deployment instructions in this repository are Linux-specific.
+- If something behaves differently on Windows, prefer Linux before reporting it as a Linux deployment issue.
 
 ## Start Modes
 
