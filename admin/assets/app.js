@@ -6,7 +6,10 @@ const LANG_STORAGE_KEY = "twitcast-ui-lang";
 const langState = { value: "EN" };
 const themeState = { value: "dark" };
 const logState = { lines: [], hideOffline: true, filteredCount: 0, loaded: false };
-const appState = { status: null, files: null };
+const appState = { status: null, files: null, streamers: [] };
+const streamerModalState = { index: null, folderTouched: false, rawSchedule: "" };
+const STREAMER_FOLDER_PREFIX = "Recording/";
+const LEGACY_STREAMER_FOLDER_PREFIX = "Recordings/";
 let botRestartPending = false;
 let toastTimer = null;
 
@@ -54,16 +57,18 @@ const I18N = {
         "system.upToDate": "This build already matches origin/main.",
         "settings.section": "General & Streamer Settings",
         "settings.addStreamer": "Add Streamer",
+        "settings.addStreamerHint": "Need help? Open the field guide first.",
+        "settings.streamerGuide": "Field Guide",
         "settings.recorderLanguage": "Recorder Language",
         "settings.langEnglish": "English",
         "settings.langChinese": "Traditional Chinese",
         "settings.mirrorLogs": "Mirror logs to `app.log`",
-        "settings.passwordHint": "If the streamer uses a TwitCasting secret word, enter it in the password column. Leave it blank for normal streams.",
         "table.enabled": "Enabled",
         "table.screenId": "Screen ID",
-        "table.schedule": "Schedule",
+        "table.schedule": "Interval",
         "table.streamPassword": "Live Password",
         "table.targetFolder": "Target Folder",
+        "table.actions": "Actions",
         "table.name": "Name",
         "table.type": "Type",
         "table.size": "Size",
@@ -117,9 +122,13 @@ const I18N = {
         "metrics.latestError": "Latest Error",
         "metrics.notStarted": "Not started",
         "streamers.none": "No streamers are configured yet. Use \"Add Streamer\" to create one.",
-        "streamers.placeholderPassword": "Optional",
-        "streamers.placeholderFolder": "Recordings/streamer-name",
+        "streamers.passwordSet": "Configured",
+        "streamers.passwordMissing": "Not set",
+        "streamers.edit": "Edit",
         "streamers.remove": "Remove",
+        "streamers.removeConfirm": "Remove streamer {id}?",
+        "streamers.pendingSave": "Streamer list updated locally. Click Save Settings to write it to disk.",
+        "streamers.customScheduleNotice": "This entry currently uses a custom schedule ({schedule}). Saving here will rewrite it as seconds.",
         "save.saved": "Settings saved.",
         "save.savedRestartRecommended": "Settings were saved. The recorder is still running, so a restart is recommended before expecting new behavior.",
         "recorder.start": "start",
@@ -129,11 +138,28 @@ const I18N = {
         "bot.restartConfirm": "Restart the entire bot process now? The web console and recorder will disconnect briefly.",
         "bot.restartRequested": "Bot restart requested. The page will reconnect automatically in a few seconds.",
         "bot.notRecovered": "Bot did not recover within 60 seconds. Check web.log or the process output.",
+        "common.close": "Close",
+        "common.cancel": "Cancel",
         "common.loading": "Loading...",
         "common.enabled": "Enabled",
         "common.disabled": "Disabled",
+        "common.notSet": "Not set",
+        "common.seconds": "seconds",
         "common.requestFailed": "Request failed",
-        "common.unexpectedError": "An unexpected error occurred."
+        "common.unexpectedError": "An unexpected error occurred.",
+        "streamer.modalTitleAdd": "Add Streamer",
+        "streamer.modalTitleEdit": "Edit Streamer",
+        "streamer.modalSaveAdd": "Add to List",
+        "streamer.modalSaveEdit": "Update Entry",
+        "streamer.enabledLabel": "Enable this streamer",
+        "streamer.helpScreenId": "Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.",
+        "streamer.helpSchedule": "How often the recorder checks this streamer. Example: 5 means every 5 seconds.",
+        "streamer.helpFolder": "Recordings for this streamer are saved under the Recording/ subfolder you choose here.",
+        "streamer.helpPassword": "Only fill this if the stream uses a TwitCasting secret word.",
+        "streamer.guideTitle": "How to Fill Streamer Fields",
+        "streamer.guideSaveNote": "After changing the streamer list, click Save Settings on the main page to write it to disk.",
+        "streamer.requiredScreenId": "Screen ID is required.",
+        "streamer.invalidInterval": "Check interval must be 1 second or higher."
     },
     ZH: {
         "document.title": "TwitCasting VPS 控制台",
@@ -178,16 +204,18 @@ const I18N = {
         "system.upToDate": "目前版本已與 origin/main 一致。",
         "settings.section": "一般與直播主設定",
         "settings.addStreamer": "新增直播主",
+        "settings.addStreamerHint": "不確定怎麼填時，先打開欄位說明。",
+        "settings.streamerGuide": "欄位說明",
         "settings.recorderLanguage": "錄影器語言",
         "settings.langEnglish": "英文",
         "settings.langChinese": "繁體中文",
         "settings.mirrorLogs": "同步寫入 `app.log`",
-        "settings.passwordHint": "若該直播主使用 TwitCasting 合言葉，請在密碼欄填入；一般直播則留白即可。",
         "table.enabled": "啟用",
         "table.screenId": "Screen ID",
-        "table.schedule": "排程",
+        "table.schedule": "秒數",
         "table.streamPassword": "直播密碼",
         "table.targetFolder": "目標資料夾",
+        "table.actions": "操作",
         "table.name": "名稱",
         "table.type": "類型",
         "table.size": "大小",
@@ -241,9 +269,13 @@ const I18N = {
         "metrics.latestError": "最近錯誤",
         "metrics.notStarted": "尚未啟動",
         "streamers.none": "目前尚未設定任何直播主，請使用「新增直播主」建立一筆。",
-        "streamers.placeholderPassword": "選填",
-        "streamers.placeholderFolder": "錄影/直播主名稱",
+        "streamers.passwordSet": "已設定",
+        "streamers.passwordMissing": "未設定",
+        "streamers.edit": "編輯",
         "streamers.remove": "移除",
+        "streamers.removeConfirm": "確定要移除直播主 {id} 嗎？",
+        "streamers.pendingSave": "直播主清單已在頁面上更新，記得按「儲存設定」才會寫入檔案。",
+        "streamers.customScheduleNotice": "這筆資料目前使用自訂排程 `{schedule}`，若在此儲存，會改寫為秒數模式。",
         "save.saved": "設定已儲存。",
         "save.savedRestartRecommended": "設定已儲存，但錄影器仍在執行中；若要套用新行為，建議先重啟錄影器。",
         "recorder.start": "啟動",
@@ -253,11 +285,28 @@ const I18N = {
         "bot.restartConfirm": "現在要重啟整個 Bot 行程嗎？管理頁與錄影器會暫時中斷。",
         "bot.restartRequested": "已送出 Bot 重啟要求，頁面會在幾秒內自動重新連線。",
         "bot.notRecovered": "Bot 在 60 秒內尚未恢復，請檢查 web.log 或程序輸出。",
+        "common.close": "關閉",
+        "common.cancel": "取消",
         "common.loading": "載入中...",
         "common.enabled": "啟用",
         "common.disabled": "停用",
+        "common.notSet": "未設定",
+        "common.seconds": "秒",
         "common.requestFailed": "請求失敗",
-        "common.unexpectedError": "發生未預期的錯誤。"
+        "common.unexpectedError": "發生未預期的錯誤。",
+        "streamer.modalTitleAdd": "新增直播主",
+        "streamer.modalTitleEdit": "編輯直播主",
+        "streamer.modalSaveAdd": "加入清單",
+        "streamer.modalSaveEdit": "更新資料",
+        "streamer.enabledLabel": "啟用這位直播主",
+        "streamer.helpScreenId": "請填 TwitCasting 網址中 `twitcasting.tv/` 後面的那段 ID。",
+        "streamer.helpSchedule": "這是檢查直播是否開始的頻率，例如 5 代表每 5 秒檢查一次。",
+        "streamer.helpFolder": "這位直播主的錄影檔會存到你指定的 `Recording/` 子資料夾中。",
+        "streamer.helpPassword": "只有該直播使用 TwitCasting 合言葉時才需要填寫。",
+        "streamer.guideTitle": "直播主欄位怎麼填",
+        "streamer.guideSaveNote": "改完直播主清單後，記得回主畫面按「儲存設定」才會真的寫入檔案。",
+        "streamer.requiredScreenId": "必須填寫 Screen ID。",
+        "streamer.invalidInterval": "檢查秒數至少要 1 秒。"
     }
 };
 
@@ -298,6 +347,22 @@ function cacheElements() {
     ui.langInput = document.getElementById("langInput");
     ui.enableLogInput = document.getElementById("enableLogInput");
     ui.streamersBody = document.getElementById("streamersBody");
+    ui.streamerGuideBtn = document.getElementById("streamerGuideBtn");
+    ui.streamerModal = document.getElementById("streamerModal");
+    ui.streamerModalBackdrop = document.getElementById("streamerModalBackdrop");
+    ui.streamerModalTitle = document.getElementById("streamerModalTitle");
+    ui.closeStreamerModalBtn = document.getElementById("closeStreamerModalBtn");
+    ui.cancelStreamerModalBtn = document.getElementById("cancelStreamerModalBtn");
+    ui.saveStreamerModalBtn = document.getElementById("saveStreamerModalBtn");
+    ui.streamerEnabledInput = document.getElementById("streamerEnabledInput");
+    ui.streamerScreenIdInput = document.getElementById("streamerScreenIdInput");
+    ui.streamerScheduleSecondsInput = document.getElementById("streamerScheduleSecondsInput");
+    ui.streamerScheduleNotice = document.getElementById("streamerScheduleNotice");
+    ui.streamerFolderSuffixInput = document.getElementById("streamerFolderSuffixInput");
+    ui.streamerPasswordInput = document.getElementById("streamerPasswordInput");
+    ui.streamerGuideModal = document.getElementById("streamerGuideModal");
+    ui.streamerGuideModalBackdrop = document.getElementById("streamerGuideModalBackdrop");
+    ui.closeStreamerGuideModalBtn = document.getElementById("closeStreamerGuideModalBtn");
 
     ui.discordEnabledInput = document.getElementById("discordEnabledInput");
     ui.discordTokenInput = document.getElementById("discordTokenInput");
@@ -365,9 +430,8 @@ function applyLanguage(language) {
         renderFiles(appState.files);
     }
 
-    if (ui.streamersBody?.querySelector("[data-streamer-row='1'], td[colspan]")) {
-        renderStreamers(collectStreamerRows());
-    }
+    renderStreamers(appState.streamers);
+    updateStreamerModalCopy();
 
     renderLogs();
 }
@@ -383,13 +447,31 @@ function bindEvents() {
     ui.stopRecorderBtn.addEventListener("click", () => controlRecorder("stop").catch(handleError));
     ui.restartRecorderBtn.addEventListener("click", () => controlRecorder("restart").catch(handleError));
     ui.restartBotBtn.addEventListener("click", () => restartBot().catch(handleError));
-    ui.addStreamerBtn.addEventListener("click", addStreamerRow);
+    ui.addStreamerBtn.addEventListener("click", () => openStreamerModal());
+    ui.streamerGuideBtn.addEventListener("click", openStreamerGuideModal);
+    ui.closeStreamerModalBtn.addEventListener("click", closeStreamerModal);
+    ui.cancelStreamerModalBtn.addEventListener("click", closeStreamerModal);
+    ui.streamerModalBackdrop.addEventListener("click", closeStreamerModal);
+    ui.saveStreamerModalBtn.addEventListener("click", () => {
+        try {
+            saveStreamerFromModal();
+        } catch (error) {
+            handleError(error);
+        }
+    });
+    ui.streamerScreenIdInput.addEventListener("input", syncFolderSuffixFromScreenId);
+    ui.streamerFolderSuffixInput.addEventListener("input", () => {
+        streamerModalState.folderTouched = true;
+    });
+    ui.closeStreamerGuideModalBtn.addEventListener("click", closeStreamerGuideModal);
+    ui.streamerGuideModalBackdrop.addEventListener("click", closeStreamerGuideModal);
     ui.fileRootSelect.addEventListener("change", () => browseFiles(ui.fileRootSelect.value, "").catch(handleError));
     ui.fileUpBtn.addEventListener("click", () => browseFiles(fileState.root, parentPath(fileState.path)).catch(handleError));
     ui.fileRefreshBtn.addEventListener("click", () => browseFiles(fileState.root, fileState.path).catch(handleError));
     ui.logsRefreshBtn.addEventListener("click", () => loadLogs().catch(handleError));
     ui.hideOfflineLogsInput.addEventListener("change", handleOfflineLogFilterChange);
     ui.langInput.addEventListener("change", () => applyLanguage(ui.langInput.value));
+    document.addEventListener("keydown", handleGlobalKeydown);
 }
 
 // Theme needs to be applied before the first full paint to avoid a flash of the wrong palette.
@@ -628,10 +710,11 @@ function renderStatus(data) {
 }
 
 function renderSettings(settings) {
+    appState.streamers = normalizeStreamers(settings.app?.streamers || []);
     ui.langInput.value = settings.app?.lang || "EN";
     applyLanguage(ui.langInput.value);
     ui.enableLogInput.checked = Boolean(settings.app?.enable_log);
-    renderStreamers(settings.app?.streamers || []);
+    renderStreamers(appState.streamers);
 
     ui.discordEnabledInput.checked = Boolean(settings.discord?.enabled);
     ui.discordTokenInput.value = settings.discord?.bot_token || "";
@@ -658,44 +741,251 @@ function renderStreamers(streamers) {
         return;
     }
 
-    streamers.forEach((streamer) => {
-        ui.streamersBody.appendChild(createStreamerRow(streamer));
+    streamers.forEach((streamer, index) => {
+        ui.streamersBody.appendChild(createStreamerRow(streamer, index));
     });
 }
 
-function createStreamerRow(streamer = {}) {
+function createStreamerRow(streamer = {}, index) {
     const row = document.createElement("tr");
-    row.dataset.streamerRow = "1";
-    row.innerHTML = `
-        <td><input type="checkbox" data-field="enabled"></td>
-        <td><input type="text" data-field="screen-id" placeholder="mielu_ii"></td>
-        <td><input type="text" data-field="schedule" placeholder="@every 5s"></td>
-        <td><input type="password" data-field="password" autocomplete="new-password" placeholder="${escapeHtml(t("streamers.placeholderPassword"))}"></td>
-        <td><input type="text" data-field="folder" placeholder="${escapeHtml(t("streamers.placeholderFolder"))}"></td>
-        <td class="actions-cell"><button type="button" class="small danger">${escapeHtml(t("streamers.remove"))}</button></td>
-    `;
+    const actionsCell = document.createElement("td");
+    actionsCell.className = "actions-cell";
 
-    row.querySelector('[data-field="enabled"]').checked = Boolean(streamer.enabled ?? true);
-    row.querySelector('[data-field="screen-id"]').value = streamer["screen-id"] || "";
-    row.querySelector('[data-field="schedule"]').value = streamer.schedule || "@every 5s";
-    row.querySelector('[data-field="password"]').value = streamer.password || "";
-    row.querySelector('[data-field="folder"]').value = streamer.folder || "";
-    row.querySelector("button").addEventListener("click", () => {
-        row.remove();
-        if (!ui.streamersBody.querySelector("[data-streamer-row='1']")) {
-            renderStreamers([]);
-        }
-    });
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "table-link";
+    editButton.textContent = t("streamers.edit");
+    editButton.addEventListener("click", () => openStreamerModal(index));
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "table-link";
+    removeButton.textContent = prefixedActionLabel(true, t("streamers.remove"));
+    removeButton.addEventListener("click", () => removeStreamer(index));
+
+    actionsCell.append(editButton, removeButton);
+
+    row.innerHTML = `
+        <td><span class="mini-badge ${streamer.enabled ? "enabled" : "disabled"}">${escapeHtml(streamer.enabled ? t("common.enabled") : t("common.disabled"))}</span></td>
+        <td class="mono">${escapeHtml(streamer["screen-id"] || "—")}</td>
+        <td>${escapeHtml(formatScheduleDisplay(streamer.schedule))}</td>
+        <td>${escapeHtml(streamer.password ? t("streamers.passwordSet") : t("streamers.passwordMissing"))}</td>
+        <td class="mono">${escapeHtml(formatStreamerFolder(streamer.folder, streamer["screen-id"]))}</td>
+    `;
+    row.appendChild(actionsCell);
 
     return row;
 }
 
-function addStreamerRow() {
-    const placeholder = ui.streamersBody.querySelector("td[colspan='6']");
-    if (placeholder) {
-        ui.streamersBody.innerHTML = "";
+function normalizeStreamers(streamers) {
+    if (!Array.isArray(streamers)) {
+        return [];
     }
-    ui.streamersBody.appendChild(createStreamerRow({ enabled: true, schedule: "@every 5s" }));
+    return streamers
+        .filter(Boolean)
+        .map((streamer) => ({
+            enabled: Boolean(streamer.enabled),
+            "screen-id": String(streamer["screen-id"] || "").trim(),
+            schedule: String(streamer.schedule || "@every 5s").trim() || "@every 5s",
+            password: String(streamer.password || "").trim(),
+            folder: buildStreamerFolder(extractStreamerFolderSuffix(streamer.folder || "", streamer["screen-id"] || ""))
+        }));
+}
+
+function openStreamerModal(index = null) {
+    const isEdit = Number.isInteger(index);
+    const streamer = isEdit ? appState.streamers[index] : defaultStreamerEntry();
+    streamerModalState.index = isEdit ? index : null;
+    streamerModalState.folderTouched = isEdit;
+    streamerModalState.rawSchedule = streamer.schedule && scheduleToSeconds(streamer.schedule) === null ? streamer.schedule : "";
+
+    ui.streamerEnabledInput.checked = Boolean(streamer.enabled);
+    ui.streamerScreenIdInput.value = streamer["screen-id"] || "";
+    ui.streamerScheduleSecondsInput.value = String(scheduleToSeconds(streamer.schedule) || 5);
+    ui.streamerFolderSuffixInput.value = extractStreamerFolderSuffix(streamer.folder, streamer["screen-id"]);
+    ui.streamerPasswordInput.value = streamer.password || "";
+
+    updateStreamerModalCopy();
+    openModalShell(ui.streamerModal, ui.streamerScreenIdInput);
+}
+
+function closeStreamerModal() {
+    streamerModalState.index = null;
+    streamerModalState.folderTouched = false;
+    streamerModalState.rawSchedule = "";
+    ui.streamerModal.hidden = true;
+    document.body.classList.remove("modal-open");
+}
+
+function openStreamerGuideModal() {
+    openModalShell(ui.streamerGuideModal, ui.closeStreamerGuideModalBtn);
+}
+
+function closeStreamerGuideModal() {
+    ui.streamerGuideModal.hidden = true;
+    document.body.classList.remove("modal-open");
+}
+
+function openModalShell(element, focusTarget) {
+    element.hidden = false;
+    document.body.classList.add("modal-open");
+    window.setTimeout(() => focusTarget?.focus(), 0);
+}
+
+function updateStreamerModalCopy() {
+    const isEdit = Number.isInteger(streamerModalState.index);
+    ui.streamerModalTitle.textContent = isEdit ? t("streamer.modalTitleEdit") : t("streamer.modalTitleAdd");
+    ui.saveStreamerModalBtn.textContent = isEdit ? t("streamer.modalSaveEdit") : t("streamer.modalSaveAdd");
+    if (streamerModalState.rawSchedule) {
+        ui.streamerScheduleNotice.hidden = false;
+        ui.streamerScheduleNotice.textContent = t("streamers.customScheduleNotice", { schedule: streamerModalState.rawSchedule });
+    } else {
+        ui.streamerScheduleNotice.hidden = true;
+        ui.streamerScheduleNotice.textContent = "";
+    }
+}
+
+function saveStreamerFromModal() {
+    const screenId = ui.streamerScreenIdInput.value.trim();
+    if (!screenId) {
+        throw new Error(t("streamer.requiredScreenId"));
+    }
+
+    const seconds = Number.parseInt(ui.streamerScheduleSecondsInput.value, 10);
+    if (!Number.isFinite(seconds) || seconds < 1) {
+        throw new Error(t("streamer.invalidInterval"));
+    }
+
+    const folderSuffix = (ui.streamerFolderSuffixInput.value.trim() || screenId).replace(/^\/+|\/+$/g, "");
+    const nextStreamer = {
+        enabled: ui.streamerEnabledInput.checked,
+        "screen-id": screenId,
+        schedule: buildEverySchedule(seconds),
+        folder: buildStreamerFolder(folderSuffix),
+        password: ui.streamerPasswordInput.value.trim()
+    };
+
+    if (Number.isInteger(streamerModalState.index)) {
+        appState.streamers[streamerModalState.index] = nextStreamer;
+    } else {
+        appState.streamers.push(nextStreamer);
+    }
+
+    renderStreamers(appState.streamers);
+    closeStreamerModal();
+    showToast(t("streamers.pendingSave"));
+}
+
+function removeStreamer(index) {
+    const streamer = appState.streamers[index];
+    if (!streamer) {
+        return;
+    }
+    if (!window.confirm(t("streamers.removeConfirm", { id: streamer["screen-id"] || "—" }))) {
+        return;
+    }
+    appState.streamers.splice(index, 1);
+    renderStreamers(appState.streamers);
+    showToast(t("streamers.pendingSave"));
+}
+
+function defaultStreamerEntry() {
+    return {
+        enabled: true,
+        "screen-id": "",
+        schedule: "@every 5s",
+        folder: buildStreamerFolder(""),
+        password: ""
+    };
+}
+
+function syncFolderSuffixFromScreenId() {
+    if (streamerModalState.folderTouched) {
+        return;
+    }
+    ui.streamerFolderSuffixInput.value = ui.streamerScreenIdInput.value.trim();
+}
+
+function buildStreamerFolder(folderSuffix) {
+    return `${STREAMER_FOLDER_PREFIX}${String(folderSuffix || "").replace(/^\/+|\/+$/g, "")}`;
+}
+
+function extractStreamerFolderSuffix(folder, screenId) {
+    const value = String(folder || "").trim();
+    if (!value) {
+        return String(screenId || "").trim();
+    }
+    if (value.startsWith(STREAMER_FOLDER_PREFIX)) {
+        return value.slice(STREAMER_FOLDER_PREFIX.length);
+    }
+    if (value.startsWith(LEGACY_STREAMER_FOLDER_PREFIX)) {
+        return value.slice(LEGACY_STREAMER_FOLDER_PREFIX.length);
+    }
+    return value.replace(/^\/+|\/+$/g, "");
+}
+
+function formatStreamerFolder(folder, screenId) {
+    return buildStreamerFolder(extractStreamerFolderSuffix(folder, screenId));
+}
+
+function buildEverySchedule(seconds) {
+    return `@every ${seconds}s`;
+}
+
+function scheduleToSeconds(schedule) {
+    const raw = String(schedule || "").trim();
+    if (!raw.toLowerCase().startsWith("@every ")) {
+        return null;
+    }
+    const duration = raw.slice(7).trim().toLowerCase();
+    const matches = Array.from(duration.matchAll(/(\d+)(h|m|s)/g));
+    if (!matches.length) {
+        return null;
+    }
+
+    let consumed = "";
+    let totalSeconds = 0;
+    matches.forEach((match) => {
+        consumed += match[0];
+        const amount = Number.parseInt(match[1], 10);
+        switch (match[2]) {
+        case "h":
+            totalSeconds += amount * 3600;
+            break;
+        case "m":
+            totalSeconds += amount * 60;
+            break;
+        case "s":
+            totalSeconds += amount;
+            break;
+        }
+    });
+
+    if (consumed !== duration || totalSeconds < 1) {
+        return null;
+    }
+    return totalSeconds;
+}
+
+function formatScheduleDisplay(schedule) {
+    const seconds = scheduleToSeconds(schedule);
+    if (seconds === null) {
+        return String(schedule || "—");
+    }
+    return `${seconds} ${t("common.seconds")}`;
+}
+
+function handleGlobalKeydown(event) {
+    if (event.key !== "Escape") {
+        return;
+    }
+    if (!ui.streamerModal.hidden) {
+        closeStreamerModal();
+        return;
+    }
+    if (!ui.streamerGuideModal.hidden) {
+        closeStreamerGuideModal();
+    }
 }
 
 async function saveSettings() {
@@ -774,23 +1064,19 @@ function collectSettings() {
 }
 
 function collectAppSettings() {
-    const streamers = collectStreamerRows().filter((streamer) => streamer["screen-id"] || streamer.folder || streamer.schedule || streamer.password);
+    const streamers = appState.streamers.map((streamer) => ({
+        enabled: streamer.enabled,
+        "screen-id": streamer["screen-id"],
+        schedule: streamer.schedule,
+        folder: streamer.folder,
+        password: streamer.password
+    }));
 
     return {
         lang: ui.langInput.value,
         enable_log: ui.enableLogInput.checked,
         streamers
     };
-}
-
-function collectStreamerRows() {
-    return Array.from(ui.streamersBody.querySelectorAll("[data-streamer-row='1']")).map((row) => ({
-        enabled: row.querySelector('[data-field="enabled"]').checked,
-        "screen-id": row.querySelector('[data-field="screen-id"]').value.trim(),
-        schedule: row.querySelector('[data-field="schedule"]').value.trim(),
-        password: row.querySelector('[data-field="password"]').value.trim(),
-        folder: row.querySelector('[data-field="folder"]').value.trim()
-    }));
 }
 
 function collectDiscordSettings() {

@@ -65,7 +65,11 @@
         <section class="panel">
             <div class="section-head">
                 <h2 data-i18n="settings.section">General &amp; Streamer Settings</h2>
-                <button id="addStreamerBtn" class="ghost" data-i18n="settings.addStreamer">Add Streamer</button>
+                <div class="inline-actions streamer-actions">
+                    <span class="section-note" data-i18n="settings.addStreamerHint">Need help? Open the field guide first.</span>
+                    <button id="streamerGuideBtn" class="ghost small" type="button" data-i18n="settings.streamerGuide">Field Guide</button>
+                    <button id="addStreamerBtn" class="ghost" type="button" data-i18n="settings.addStreamer">Add Streamer</button>
+                </div>
             </div>
             <div class="general-grid">
                 <label>
@@ -80,7 +84,6 @@
                     <span data-i18n="settings.mirrorLogs">Mirror logs to `app.log`</span>
                 </label>
             </div>
-            <p class="muted-text helper-note" data-i18n="settings.passwordHint">If the streamer uses a TwitCasting secret word, enter it in the password column. Leave it blank for normal streams.</p>
 
             <div class="table-wrap">
                 <table>
@@ -88,10 +91,10 @@
                         <tr>
                             <th data-i18n="table.enabled">Enabled</th>
                             <th data-i18n="table.screenId">Screen ID</th>
-                            <th data-i18n="table.schedule">Schedule</th>
+                            <th data-i18n="table.schedule">Interval</th>
                             <th data-i18n="table.streamPassword">Live Password</th>
                             <th data-i18n="table.targetFolder">Target Folder</th>
-                            <th></th>
+                            <th data-i18n="table.actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="streamersBody"></tbody>
@@ -220,6 +223,82 @@
         </section>
     </div>
 
+    <div id="streamerModal" class="modal-shell" hidden>
+        <div id="streamerModalBackdrop" class="modal-backdrop"></div>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="streamerModalTitle">
+            <div class="section-head compact">
+                <h3 id="streamerModalTitle">Add Streamer</h3>
+                <button id="closeStreamerModalBtn" class="ghost small" type="button" data-i18n="common.close">Close</button>
+            </div>
+            <div class="modal-stack">
+                <label class="checkbox">
+                    <input id="streamerEnabledInput" type="checkbox" checked>
+                    <span data-i18n="streamer.enabledLabel">Enable this streamer</span>
+                </label>
+                <label>
+                    <span data-i18n="table.screenId">Screen ID</span>
+                    <input id="streamerScreenIdInput" type="text" autocomplete="off" spellcheck="false">
+                    <small class="field-help" data-i18n="streamer.helpScreenId">Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.</small>
+                </label>
+                <label>
+                    <span data-i18n="table.schedule">Interval</span>
+                    <div class="input-inline">
+                        <input id="streamerScheduleSecondsInput" type="number" min="1" step="1" inputmode="numeric">
+                        <span class="input-addon" data-i18n="common.seconds">seconds</span>
+                    </div>
+                    <small id="streamerScheduleNotice" class="field-help" hidden></small>
+                    <small class="field-help" data-i18n="streamer.helpSchedule">How often the recorder checks this streamer. Example: 5 means every 5 seconds.</small>
+                </label>
+                <label>
+                    <span data-i18n="table.targetFolder">Target Folder</span>
+                    <div class="input-inline">
+                        <span class="input-addon input-addon-fixed mono">Recording/</span>
+                        <input id="streamerFolderSuffixInput" type="text" autocomplete="off" spellcheck="false">
+                    </div>
+                    <small class="field-help" data-i18n="streamer.helpFolder">Recordings for this streamer are saved under the Recording/ subfolder you choose here.</small>
+                </label>
+                <label>
+                    <span data-i18n="table.streamPassword">Live Password</span>
+                    <input id="streamerPasswordInput" type="password" autocomplete="new-password" spellcheck="false">
+                    <small class="field-help" data-i18n="streamer.helpPassword">Only fill this if the stream uses a TwitCasting secret word.</small>
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button id="cancelStreamerModalBtn" class="ghost" type="button" data-i18n="common.cancel">Cancel</button>
+                <button id="saveStreamerModalBtn" type="button">Add to List</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="streamerGuideModal" class="modal-shell" hidden>
+        <div id="streamerGuideModalBackdrop" class="modal-backdrop"></div>
+        <div class="modal-card modal-card-guide" role="dialog" aria-modal="true" aria-labelledby="streamerGuideTitle">
+            <div class="section-head compact">
+                <h3 id="streamerGuideTitle" data-i18n="streamer.guideTitle">How to Fill Streamer Fields</h3>
+                <button id="closeStreamerGuideModalBtn" class="ghost small" type="button" data-i18n="common.close">Close</button>
+            </div>
+            <div class="guide-list">
+                <div class="guide-item">
+                    <strong data-i18n="table.screenId">Screen ID</strong>
+                    <p data-i18n="streamer.helpScreenId">Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.</p>
+                </div>
+                <div class="guide-item">
+                    <strong data-i18n="table.schedule">Interval</strong>
+                    <p data-i18n="streamer.helpSchedule">How often the recorder checks this streamer. Example: 5 means every 5 seconds.</p>
+                </div>
+                <div class="guide-item">
+                    <strong data-i18n="table.targetFolder">Target Folder</strong>
+                    <p data-i18n="streamer.helpFolder">Recordings for this streamer are saved under the Recording/ subfolder you choose here.</p>
+                </div>
+                <div class="guide-item">
+                    <strong data-i18n="table.streamPassword">Live Password</strong>
+                    <p data-i18n="streamer.helpPassword">Only fill this if the stream uses a TwitCasting secret word.</p>
+                </div>
+            </div>
+            <p class="muted-text helper-note" data-i18n="streamer.guideSaveNote">After changing the streamer list, click Save Settings on the main page to write it to disk.</p>
+        </div>
+    </div>
+
     <div id="toast" class="toast" aria-live="polite"></div>
     <script>
         (() => {
@@ -247,16 +326,28 @@
                     "system.diagnostics": "Diagnostics",
                     "settings.section": "General & Streamer Settings",
                     "settings.addStreamer": "Add Streamer",
+                    "settings.addStreamerHint": "Need help? Open the field guide first.",
+                    "settings.streamerGuide": "Field Guide",
                     "settings.recorderLanguage": "Recorder Language",
                     "settings.langEnglish": "English",
                     "settings.langChinese": "Traditional Chinese",
                     "settings.mirrorLogs": "Mirror logs to `app.log`",
-                    "settings.passwordHint": "If the streamer uses a TwitCasting secret word, enter it in the password column. Leave it blank for normal streams.",
                     "table.enabled": "Enabled",
                     "table.screenId": "Screen ID",
-                    "table.schedule": "Schedule",
+                    "table.schedule": "Interval",
                     "table.streamPassword": "Live Password",
                     "table.targetFolder": "Target Folder",
+                    "table.actions": "Actions",
+                    "common.close": "Close",
+                    "common.cancel": "Cancel",
+                    "common.seconds": "seconds",
+                    "streamer.enabledLabel": "Enable this streamer",
+                    "streamer.helpScreenId": "Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.",
+                    "streamer.helpSchedule": "How often the recorder checks this streamer. Example: 5 means every 5 seconds.",
+                    "streamer.helpFolder": "Recordings for this streamer are saved under the Recording/ subfolder you choose here.",
+                    "streamer.helpPassword": "Only fill this if the stream uses a TwitCasting secret word.",
+                    "streamer.guideTitle": "How to Fill Streamer Fields",
+                    "streamer.guideSaveNote": "After changing the streamer list, click Save Settings on the main page to write it to disk.",
                     "discord.section": "Discord Notifications",
                     "discord.testButton": "Send Test Message",
                     "discord.enabled": "Enable Discord notifications",
@@ -305,16 +396,28 @@
                     "system.diagnostics": "診斷資訊",
                     "settings.section": "一般與直播主設定",
                     "settings.addStreamer": "新增直播主",
+                    "settings.addStreamerHint": "不確定怎麼填時，先打開欄位說明。",
+                    "settings.streamerGuide": "欄位說明",
                     "settings.recorderLanguage": "錄影器語言",
                     "settings.langEnglish": "英文",
                     "settings.langChinese": "繁體中文",
                     "settings.mirrorLogs": "同步寫入 `app.log`",
-                    "settings.passwordHint": "若該直播主使用 TwitCasting 合言葉，請在密碼欄填入；一般直播則留白即可。",
                     "table.enabled": "啟用",
                     "table.screenId": "Screen ID",
-                    "table.schedule": "排程",
+                    "table.schedule": "秒數",
                     "table.streamPassword": "直播密碼",
                     "table.targetFolder": "目標資料夾",
+                    "table.actions": "操作",
+                    "common.close": "關閉",
+                    "common.cancel": "取消",
+                    "common.seconds": "秒",
+                    "streamer.enabledLabel": "啟用這位直播主",
+                    "streamer.helpScreenId": "請填 TwitCasting 網址中 `twitcasting.tv/` 後面的那段 ID。",
+                    "streamer.helpSchedule": "這是檢查直播是否開始的頻率，例如 5 代表每 5 秒檢查一次。",
+                    "streamer.helpFolder": "這位直播主的錄影檔會存到你指定的 `Recording/` 子資料夾中。",
+                    "streamer.helpPassword": "只有該直播使用 TwitCasting 合言葉時才需要填寫。",
+                    "streamer.guideTitle": "直播主欄位怎麼填",
+                    "streamer.guideSaveNote": "改完直播主清單後，記得回主畫面按「儲存設定」才會真的寫入檔案。",
                     "discord.section": "Discord 通知",
                     "discord.testButton": "發送測試訊息",
                     "discord.enabled": "啟用 Discord 通知",

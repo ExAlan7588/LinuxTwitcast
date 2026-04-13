@@ -1,6 +1,6 @@
 # LinuxTwitcast
 
-[Traditional Chinese README](README_ZH.md)
+[繁體中文 README](README_ZH.md)
 
 LinuxTwitcast records TwitCasting streams on a schedule and adds a built-in web console for headless Ubuntu / VPS deployments.
 
