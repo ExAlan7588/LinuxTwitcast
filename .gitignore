@@ -7,7 +7,6 @@ app.log
 .gocache/
 .gomodcache/
 twitcast_bot
-*.exe
 .venv/
 __pycache__/
 *.pyc
@@ -17,7 +16,6 @@ Recordings/
 codex-turbo-install-staging/
 codex-turbo-install-staging-home/
 codex-turbo-src/
-LinuxTwitcast.7z
 config.json
 
 
