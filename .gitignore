@@ -20,6 +20,7 @@ codex-turbo-install-staging/
 codex-turbo-install-staging-home/
 codex-turbo-src/
 config.json
+gcm-diagnose.log
 
 
 # macOS 
