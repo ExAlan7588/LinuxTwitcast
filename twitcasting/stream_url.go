@@ -250,7 +250,8 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 		}
 	}
 
-	// 直播页里同时有直播缩图和主播头像；这里优先取 og:image，确保 Discord 右上角显示的是大头贴。
+	// TwitCasting 页面里同时有直播封面和主播头像。
+	// 这里先抓 broadcaster profile image，最后才 fallback 到 og:image / twitter:image。
 	info.avatarURL = extractAvatarURL(bodyStr)
 	info.streamerName = sanitizeFilename(info.streamerName)
 	info.title = sanitizeFilename(info.title)
@@ -258,6 +259,19 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 }
 
 func extractAvatarURL(body string) string {
+	for _, pattern := range []string{
+		`(?is)\bdata-broadcaster-profile-image=["']([^"'<>]+)["']`,
+		`(?is)<img[^>]+\bclass=["'][^"']*\bauthorthumbnail\b[^"']*["'][^>]+\bsrc=["']([^"'<>]+)["']`,
+		`(?is)<img[^>]+\bsrc=["']([^"'<>]+)["'][^>]+\bclass=["'][^"']*\bauthorthumbnail\b[^"']*["']`,
+		`(?is)<div[^>]+\bclass=["'][^"']*\btw-user-nav2-icon\b[^"']*["'][^>]*>\s*<img[^>]+\bsrc=["']([^"'<>]+)["']`,
+		`(?is)<img[^>]+\bclass=["'][^"']*\btw-unit-own-member-icon\b[^"']*["'][^>]+\bsrc=["']([^"'<>]+)["']`,
+	} {
+		match := regexp.MustCompile(pattern).FindStringSubmatch(body)
+		if len(match) > 1 {
+			return normalizeImageURL(match[1])
+		}
+	}
+
 	for _, target := range []struct {
 		attr string
 		name string

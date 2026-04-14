@@ -37,9 +37,15 @@ func TestParseStreamPageInfoExtractsAvatarURL(t *testing.T) {
 		<html>
 			<head>
 				<title>歡迎回來 - 測試主播 (@test_user) - TwitCasting</title>
-				<meta content="//imagegw03.twitcasting.tv/avatar.jpg" property="og:image">
+				<meta content="//imagegw03.twitcasting.tv/stream-cover.jpg" property="og:image">
 				<meta name="twitter:title" content="歡迎回來">
 			</head>
+			<body>
+				<div
+					data-broadcaster-profile-image="//imagegw02.twitcasting.tv/profile-avatar.jpg"
+					data-broadcaster-id="test_user">
+				</div>
+			</body>
 		</html>
 	`
 
@@ -50,7 +56,24 @@ func TestParseStreamPageInfoExtractsAvatarURL(t *testing.T) {
 	if info.title != "歡迎回來" {
 		t.Fatalf("title = %q, want %q", info.title, "歡迎回來")
 	}
-	if info.avatarURL != "https://imagegw03.twitcasting.tv/avatar.jpg" {
-		t.Fatalf("avatarURL = %q, want %q", info.avatarURL, "https://imagegw03.twitcasting.tv/avatar.jpg")
+	if info.avatarURL != "https://imagegw02.twitcasting.tv/profile-avatar.jpg" {
+		t.Fatalf("avatarURL = %q, want %q", info.avatarURL, "https://imagegw02.twitcasting.tv/profile-avatar.jpg")
+	}
+}
+
+func TestParseStreamPageInfoFallsBackToMetaImage(t *testing.T) {
+	body := `
+		<html>
+			<head>
+				<title>晚安台 - 測試主播 (@test_user) - TwitCasting</title>
+				<meta content="//imagegw03.twitcasting.tv/stream-cover.jpg" property="og:image">
+				<meta name="twitter:title" content="晚安台">
+			</head>
+		</html>
+	`
+
+	info := parseStreamPageInfo("test_user", body)
+	if info.avatarURL != "https://imagegw03.twitcasting.tv/stream-cover.jpg" {
+		t.Fatalf("avatarURL = %q, want %q", info.avatarURL, "https://imagegw03.twitcasting.tv/stream-cover.jpg")
 	}
 }
