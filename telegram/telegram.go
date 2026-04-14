@@ -6,12 +6,15 @@ import (
 	"io"
 	"log"
 	"mime/multipart"
-	"net/url"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/jzhang046/croned-twitcasting-recorder/record"
 )
 
 type Config struct {
@@ -28,6 +31,13 @@ type UploadMethod string
 const (
 	UploadMethodAudio    UploadMethod = "audio"
 	UploadMethodDocument UploadMethod = "document"
+)
+
+var (
+	runFFmpeg = func(args ...string) ([]byte, error) {
+		return exec.Command("ffmpeg", args...).CombinedOutput()
+	}
+	uploadTelegramFile = UploadFile
 )
 
 func LoadConfig() Config {
@@ -53,42 +63,156 @@ func SaveConfig(cfg Config) error {
 }
 
 // Process handles post-recording task. Runs synchronously so run in a goroutine.
-func Process(cfg Config, filename, streamerName, title string) {
+func Process(cfg Config, session record.SessionInfo) {
 	if !cfg.Enabled || cfg.BotToken == "" || cfg.ChatID == "" {
 		return
 	}
 
-	targetFile := filename
+	targetFile := session.Filename
 	// 1. Convert to M4A if needed
 	if cfg.ConvertToM4A {
-		ext := filepath.Ext(filename)
-		base := filename[:len(filename)-len(ext)]
-		m4aFile := base + ".m4a"
+		m4aFile := taggedM4APath(session)
+		coverFile, cleanupCover, err := downloadCoverArt(session.AvatarURL)
+		if err != nil {
+			log.Printf("[Telegram] Failed downloading cover art: %v", err)
+		}
+		if cleanupCover != nil {
+			defer cleanupCover()
+		}
 
 		log.Printf("[Telegram] Extracting audio to %s\n", m4aFile)
-		cmd := exec.Command("ffmpeg", "-y", "-i", filename, "-vn", "-c:a", "copy", m4aFile)
-		out, err := cmd.CombinedOutput()
+		out, err := runFFmpeg(buildM4AArgs(session, targetFile, m4aFile, coverFile)...)
 		if err != nil {
 			log.Printf("[Telegram] FFmpeg extraction failed: %v\nOutput: %s", err, string(out))
-			// Proceed with original file if ffmpeg fails
+			return
 		} else {
 			log.Printf("[Telegram] FFmpeg extraction successful")
 			targetFile = m4aFile
 			if !cfg.KeepOriginal {
-				os.Remove(filename)
-				log.Printf("[Telegram] Removed original file %s", filename)
+				os.Remove(session.Filename)
+				log.Printf("[Telegram] Removed original file %s", session.Filename)
 			}
 		}
 	}
 
 	// 2. Upload to Telegram
 	log.Printf("[Telegram] Uploading %s to Telegram Chat %s", targetFile, cfg.ChatID)
-	err := UploadFile(cfg, targetFile, fmt.Sprintf("[%s] %s", streamerName, title))
+	err := uploadTelegramFile(cfg, targetFile, telegramCaption(session))
 	if err != nil {
 		log.Printf("[Telegram] Upload failed: %v\n", err)
 	} else {
 		log.Printf("[Telegram] Upload successful: %s\n", targetFile)
 	}
+}
+
+// 这里把文件名、元数据和封面统一在一个地方生成，避免 ffmpeg 参数散落在流程里难维护。
+func buildM4AArgs(session record.SessionInfo, inputFile, outputFile, coverFile string) []string {
+	args := []string{"-y", "-i", inputFile}
+	if strings.TrimSpace(coverFile) != "" {
+		args = append(args, "-i", coverFile, "-map", "0:a:0", "-map", "1:v:0", "-c:a", "copy", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic")
+	} else {
+		args = append(args, "-vn", "-c:a", "copy")
+	}
+	args = append(args, buildM4AMetadataArgs(session)...)
+	if strings.TrimSpace(coverFile) != "" {
+		args = append(args, "-metadata:s:v", "title=Cover", "-metadata:s:v", "comment=Cover (front)")
+	}
+	args = append(args, outputFile)
+	return args
+}
+
+func buildM4AMetadataArgs(session record.SessionInfo) []string {
+	metadata := []struct {
+		key   string
+		value string
+	}{
+		{key: "artist", value: telegramArtist(session)},
+		{key: "title", value: strings.TrimSpace(session.Title)},
+		{key: "date", value: sessionDate(session).Format("2006-01-02")},
+	}
+
+	args := make([]string, 0, len(metadata)*2)
+	for _, item := range metadata {
+		if item.value == "" {
+			continue
+		}
+		args = append(args, "-metadata", fmt.Sprintf("%s=%s", item.key, item.value))
+	}
+	return args
+}
+
+func taggedM4APath(session record.SessionInfo) string {
+	dir := filepath.Dir(session.Filename)
+	name := fmt.Sprintf("[%s][%s]", telegramArtist(session), sessionDate(session).Format("2006-01-02"))
+	if title := strings.TrimSpace(session.Title); title != "" {
+		name += title
+	}
+	return filepath.Join(dir, name+".m4a")
+}
+
+func telegramCaption(session record.SessionInfo) string {
+	artist := telegramArtist(session)
+	title := strings.TrimSpace(session.Title)
+	if title == "" {
+		return fmt.Sprintf("[%s]", artist)
+	}
+	return fmt.Sprintf("[%s] %s", artist, title)
+}
+
+func telegramArtist(session record.SessionInfo) string {
+	if artist := strings.TrimSpace(session.StreamerName); artist != "" {
+		return artist
+	}
+	return strings.TrimSpace(session.Streamer)
+}
+
+func sessionDate(session record.SessionInfo) time.Time {
+	if session.StartedAt.IsZero() {
+		return time.Now()
+	}
+	return session.StartedAt.Local()
+}
+
+// 头像下载失败不应阻塞上传；这里尽量拿到临时图片给 ffmpeg 写 attached_pic，失败就回退成纯音频标签。
+func downloadCoverArt(rawURL string) (string, func(), error) {
+	coverURL := strings.TrimSpace(rawURL)
+	if coverURL == "" {
+		return "", nil, nil
+	}
+
+	req, err := http.NewRequest(http.MethodGet, coverURL, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", nil, fmt.Errorf("bad status %d", resp.StatusCode)
+	}
+
+	ext := filepath.Ext(strings.TrimSpace(resp.Request.URL.Path))
+	if ext == "" {
+		ext = ".jpg"
+	}
+	tempFile, err := os.CreateTemp("", "linuxtwitcast-cover-*"+ext)
+	if err != nil {
+		return "", nil, err
+	}
+	if _, err := io.Copy(tempFile, resp.Body); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return "", nil, err
+	}
+	if err := tempFile.Close(); err != nil {
+		os.Remove(tempFile.Name())
+		return "", nil, err
+	}
+	return tempFile.Name(), func() { _ = os.Remove(tempFile.Name()) }, nil
 }
 
 func UploadFile(cfg Config, filePath string, caption string) error {

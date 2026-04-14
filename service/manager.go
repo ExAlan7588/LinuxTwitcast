@@ -146,8 +146,8 @@ func (m *Manager) Start() error {
 			StreamRecorder: twitcasting.RecordWS,
 			RootContext:    rootCtx,
 			Notifier:       streamerNotifier,
-			PostProcessor: func(filename, streamerName, title string) {
-				telegram.Process(telegramCfg, filename, streamerName, title)
+			PostProcessor: func(session record.SessionInfo) {
+				telegram.Process(telegramCfg, session)
 			},
 			OnSessionStart: m.handleSessionStart,
 			OnSessionEnd:   m.handleSessionEnd,

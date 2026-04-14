@@ -35,7 +35,7 @@ type RecordConfig struct {
 	StreamRecorder   func(RecordContext, chan<- []byte)
 	RootContext      context.Context
 	Notifier         DiscordNotifier // optional; nil disables Discord notifications
-	PostProcessor    func(filename, streamerName, title string)
+	PostProcessor    func(SessionInfo)
 	OnSessionStart   func(SessionInfo)
 	OnSessionEnd     func(SessionInfo)
 	OnStreamLookup   func(streamer string, err error)
@@ -118,7 +118,7 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 			go func() {
 				defer BackgroundProcessorWg.Done()
 				state.Update(streamer, "processing")
-				recordConfig.PostProcessor(sink.Filename(), session.StreamerName, session.Title)
+				recordConfig.PostProcessor(session)
 				// Clear state when post-processor completely finishes
 				state.Clear(streamer)
 			}()
