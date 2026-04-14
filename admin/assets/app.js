@@ -8,8 +8,8 @@ const themeState = { value: "dark" };
 const logState = { lines: [], hideOffline: true, filteredCount: 0, loaded: false };
 const appState = { status: null, files: null, streamers: [] };
 const streamerModalState = { index: null, folderTouched: false, rawSchedule: "" };
-const STREAMER_FOLDER_PREFIX = "Recording/";
-const LEGACY_STREAMER_FOLDER_PREFIX = "Recordings/";
+const STREAMER_FOLDER_PREFIX = "Recordings/";
+const LEGACY_STREAMER_FOLDER_PREFIX = "Recording/";
 let botRestartPending = false;
 let toastTimer = null;
 
@@ -154,7 +154,7 @@ const I18N = {
         "streamer.enabledLabel": "Enable this streamer",
         "streamer.helpScreenId": "Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.",
         "streamer.helpSchedule": "How often the recorder checks this streamer. Example: 5 means every 5 seconds.",
-        "streamer.helpFolder": "Recordings for this streamer are saved under the Recording/ subfolder you choose here.",
+        "streamer.helpFolder": "Recordings for this streamer are saved under the Recordings/ subfolder you choose here.",
         "streamer.helpPassword": "Only fill this if the stream uses a TwitCasting secret word.",
         "streamer.guideTitle": "How to Fill Streamer Fields",
         "streamer.guideSaveNote": "After changing the streamer list, click Save Settings on the main page to write it to disk.",
@@ -301,7 +301,7 @@ const I18N = {
         "streamer.enabledLabel": "啟用這位直播主",
         "streamer.helpScreenId": "請填 TwitCasting 網址中 `twitcasting.tv/` 後面的那段 ID。",
         "streamer.helpSchedule": "這是檢查直播是否開始的頻率，例如 5 代表每 5 秒檢查一次。",
-        "streamer.helpFolder": "這位直播主的錄影檔會存到你指定的 `Recording/` 子資料夾中。",
+        "streamer.helpFolder": "這位直播主的錄影檔會存到你指定的 `Recordings/` 子資料夾中。",
         "streamer.helpPassword": "只有該直播使用 TwitCasting 合言葉時才需要填寫。",
         "streamer.guideTitle": "直播主欄位怎麼填",
         "streamer.guideSaveNote": "改完直播主清單後，記得回主畫面按「儲存設定」才會真的寫入檔案。",

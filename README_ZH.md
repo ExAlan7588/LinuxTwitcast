@@ -2,6 +2,12 @@
 
 [English README](README.md)
 
+<p align="center">
+  <img src="admin/assets/icon.svg" alt="LinuxTwitcast icon" width="112">
+</p>
+
+<p align="center"><strong>無頭 Linux 控制室</strong></p>
+
 LinuxTwitcast 是一個用來定時檢查 TwitCasting 開播狀態並自動錄影的工具，這個 fork 額外提供了適合 Ubuntu / VPS 的內建 Web 管理頁。
 
 目前網站預設語系為英文，但仍保留繁中說明文件供管理者查閱。

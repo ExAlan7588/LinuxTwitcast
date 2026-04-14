@@ -7,6 +7,9 @@ app.log
 .gocache/
 .gomodcache/
 twitcast_bot
+/state.json
+/web.log
+/run-twitcast-bot.sh
 .venv/
 __pycache__/
 *.pyc

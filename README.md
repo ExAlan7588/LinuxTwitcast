@@ -2,6 +2,12 @@
 
 [繁體中文 README](README_ZH.md)
 
+<p align="center">
+  <img src="admin/assets/icon.svg" alt="LinuxTwitcast icon" width="112">
+</p>
+
+<p align="center"><strong>Headless Linux Control Room</strong></p>
+
 LinuxTwitcast records TwitCasting streams on a schedule and adds a built-in web console for headless Ubuntu / VPS deployments.
 
 The web console is now English-first by default and lets you manage:
