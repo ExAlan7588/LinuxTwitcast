@@ -1,6 +1,6 @@
 # LinuxTwitcast
 
-[繁體中文 README](README_ZH.md)
+<div align="center">[繁體中文 README](README_ZH.md)</div>
 
 <p align="center">
   <img src="admin/assets/icon.svg" alt="LinuxTwitcast icon" width="112">
@@ -30,7 +30,7 @@ By default, this fork talks to the official Telegram Bot API at `https://api.tel
 If you manually change the Telegram API endpoint to a local Bot API server, see:
 
 - Telegram Bot API server: https://github.com/tdlib/telegram-bot-api
-- Why would I need this? https://github.com/ExAlan7588/LinuxTwitcast/blob/main/README.md#telegram-notes
+- [Why would I need this?](https://github.com/ExAlan7588/LinuxTwitcast/blob/main/README.md#telegram-notes)
 
 ## Platform Support
 

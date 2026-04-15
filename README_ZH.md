@@ -1,6 +1,6 @@
 # LinuxTwitcast
 
-[English README](README.md)
+<div align="center">[English README](README.md)</div>
 
 <p align="center">
   <img src="admin/assets/icon.svg" alt="LinuxTwitcast icon" width="112">
@@ -32,7 +32,7 @@ Web 管理頁可處理：
 只有在你自己手動把 Telegram API 位址改成本地服務時，才需要參考：
 
 - Telegram Bot API server： https://github.com/tdlib/telegram-bot-api
-- 為什麼我需要這個？ https://github.com/ExAlan7588/LinuxTwitcast/blob/main/README_ZH.md#telegram-%E8%A3%9C%E5%85%85
+- [為什麼我需要這個？](https://github.com/ExAlan7588/LinuxTwitcast/blob/main/README_ZH.md#telegram-%E8%A3%9C%E5%85%85)
 
 ## 平台支援狀態
 
