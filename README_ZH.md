@@ -1,6 +1,6 @@
 # LinuxTwitcast
 
-<div align="center">[English README](README.md)</div>
+<div align="center"><a href="https://github.com/ExAlan7588/LinuxTwitcast/blob/main/README.md">English README</a></div>
 
 <p align="center">
   <img src="admin/assets/icon.svg" alt="LinuxTwitcast icon" width="112">
