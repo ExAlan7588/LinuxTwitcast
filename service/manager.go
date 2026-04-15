@@ -333,27 +333,37 @@ func (m *Manager) storeError(err error) {
 }
 
 // 密码锁页会让高频排程不断重试；记录一个短冷却，避免每 5 秒都重复打目标页和刷日志。
-func (m *Manager) shouldSkipStreamer(streamer string) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	warning, ok := m.warnings[streamer]
-	return ok && warning.Code == "stream_password_required" && time.Now().Before(warning.RetryAt)
-}
-
 func (m *Manager) handleStreamLookup(streamer string, err error) {
+	var shouldNotifyInvalid bool
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	switch {
 	case err == nil:
 		delete(m.warnings, streamer)
+
 	case errors.Is(err, twitcasting.ErrPasswordRequired):
 		m.warnings[streamer] = streamWarning{
 			Code:    "stream_password_required",
 			RetryAt: time.Now().Add(passwordRetryCooldown),
 		}
+
+	case errors.Is(err, twitcasting.ErrStreamerNotFound):
+		prev, existed := m.warnings[streamer]
+		m.warnings[streamer] = streamWarning{
+			Code: "streamer_id_invalid",
+		}
+
+		if !existed || prev.Code != "streamer_id_invalid" {
+			shouldNotifyInvalid = true
+		}
+
 	case errors.Is(err, twitcasting.ErrStreamOffline):
 		delete(m.warnings, streamer)
+	}
+
+	if shouldNotifyInvalid {
+		go discord.SendInvalidStreamerIDAlert(discord.LoadConfig(), streamer)
 	}
 }
