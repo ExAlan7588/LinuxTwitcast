@@ -266,15 +266,17 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 		}
 	}
 
-	// --- Extract stream title ---
-	// On TwitCasting, <meta name="twitter:title"> contains the live stream title
-	// set by the streamer (e.g. "♡"), NOT the streamer name.
+// --- Extract stream title ---
+	// Only use twitter:title as a fallback.
+	// If we already got a title earlier, do not overwrite it.
 	twitterTitleRegex := regexp.MustCompile(`<meta\s+name="twitter:title"\s+content="([^"]*)"`)
 	twitterTitleMatch := twitterTitleRegex.FindStringSubmatch(bodyStr)
 	if len(twitterTitleMatch) > 1 {
 		candidate := strings.TrimSpace(twitterTitleMatch[1])
-		// Only use it as the stream title if it doesn't look like the full page title
-		if candidate != "" && !strings.Contains(candidate, "@"+streamer) {
+		if info.title == "" &&
+			candidate != "" &&
+			candidate != info.streamerName &&
+			!strings.Contains(candidate, "@"+streamer) {
 			info.title = candidate
 		}
 	}
