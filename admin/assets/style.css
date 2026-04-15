@@ -343,6 +343,23 @@ h1 {
     line-height: 1.5;
 }
 
+.validation-status {
+    display: block;
+    min-height: 18px;
+}
+
+.validation-status.is-success {
+    color: var(--ok);
+}
+
+.validation-status.is-warn {
+    color: var(--warn);
+}
+
+.validation-status.is-error {
+    color: var(--danger);
+}
+
 .input-inline {
     display: flex;
     align-items: stretch;
@@ -617,6 +634,33 @@ td.actions-cell {
 .mini-badge.disabled {
     background: rgba(95, 108, 120, 0.14);
     color: var(--muted);
+}
+
+.streamer-toggle {
+    min-height: 30px;
+    padding: 4px 10px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.streamer-toggle.enabled {
+    background: rgba(29, 111, 66, 0.14);
+    color: var(--ok);
+}
+
+.streamer-toggle.disabled {
+    background: rgba(95, 108, 120, 0.14);
+    color: var(--muted);
+}
+
+.streamer-toggle:hover {
+    transform: none;
+    opacity: 0.92;
 }
 
 .table-link {

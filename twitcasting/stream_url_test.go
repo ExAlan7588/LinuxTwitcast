@@ -1,6 +1,12 @@
 package twitcasting
 
-import "testing"
+import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"testing"
+)
 
 func TestRequiresStreamPassword(t *testing.T) {
 	body := `
@@ -76,4 +82,96 @@ func TestParseStreamPageInfoFallsBackToMetaImage(t *testing.T) {
 	if info.avatarURL != "https://imagegw03.twitcasting.tv/stream-cover.jpg" {
 		t.Fatalf("avatarURL = %q, want %q", info.avatarURL, "https://imagegw03.twitcasting.tv/stream-cover.jpg")
 	}
+}
+
+func TestLookupStreamerProfileParsesValidPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/alice" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`
+			<html>
+				<head>
+					<title>歌回 - Alice/主播 (@alice) - TwitCasting</title>
+					<meta name="twitter:title" content="歌回">
+				</head>
+				<body>
+					<div data-broadcaster-profile-image="//imagegw02.twitcasting.tv/alice.jpg"></div>
+				</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	useTwitCastingTestHTTPClient(t, server)
+
+	profile, err := LookupStreamerProfile("alice")
+	if err != nil {
+		t.Fatalf("LookupStreamerProfile() error = %v", err)
+	}
+	if profile.ScreenID != "alice" {
+		t.Fatalf("ScreenID = %q, want %q", profile.ScreenID, "alice")
+	}
+	if profile.StreamerName != "Alice／主播" {
+		t.Fatalf("StreamerName = %q, want %q", profile.StreamerName, "Alice／主播")
+	}
+	if profile.Title != "歌回" {
+		t.Fatalf("Title = %q, want %q", profile.Title, "歌回")
+	}
+	if profile.AvatarURL != "https://imagegw02.twitcasting.tv/alice.jpg" {
+		t.Fatalf("AvatarURL = %q, want %q", profile.AvatarURL, "https://imagegw02.twitcasting.tv/alice.jpg")
+	}
+}
+
+func TestLookupStreamerProfileReturnsNotFoundOn404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	useTwitCastingTestHTTPClient(t, server)
+
+	_, err := LookupStreamerProfile("missing-user")
+	if !errors.Is(err, ErrStreamerNotFound) {
+		t.Fatalf("LookupStreamerProfile() error = %v, want %v", err, ErrStreamerNotFound)
+	}
+}
+
+func useTwitCastingTestHTTPClient(t *testing.T, server *httptest.Server) {
+	t.Helper()
+
+	targetURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse server URL: %v", err)
+	}
+
+	originalClient := httpClient
+	client := server.Client()
+	baseTransport := client.Transport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+	client.Transport = rewriteTwitCastingTransport{
+		target: targetURL,
+		base:   baseTransport,
+	}
+	client.Timeout = requestTimeout
+	httpClient = client
+
+	t.Cleanup(func() {
+		httpClient = originalClient
+	})
+}
+
+type rewriteTwitCastingTransport struct {
+	target *url.URL
+	base   http.RoundTripper
+}
+
+func (t rewriteTwitCastingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.URL.Scheme = t.target.Scheme
+	clone.URL.Host = t.target.Host
+	return t.base.RoundTrip(clone)
 }

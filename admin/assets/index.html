@@ -189,11 +189,7 @@
                     </div>
                 </div>
                 <div class="toolbar">
-                    <label>
-                        <span data-i18n="files.root">Root</span>
-                        <select id="fileRootSelect"></select>
-                    </label>
-                    <div id="filePathLabel" class="path-pill">/</div>
+                    <div id="filePathLabel" class="path-pill">/Recordings</div>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -233,16 +229,16 @@
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="streamerModalTitle">
             <div class="section-head compact">
                 <h3 id="streamerModalTitle">Add Streamer</h3>
-                <button id="closeStreamerModalBtn" class="ghost small" type="button" data-i18n="common.close">Close</button>
+                <div class="inline-actions">
+                    <button id="checkStreamerModalBtn" class="ghost small" type="button" data-i18n="streamer.checkButton">Check Status</button>
+                    <button id="closeStreamerModalBtn" class="ghost small" type="button" data-i18n="common.close">Close</button>
+                </div>
             </div>
             <div class="modal-stack">
-                <label class="checkbox">
-                    <input id="streamerEnabledInput" type="checkbox" checked>
-                    <span data-i18n="streamer.enabledLabel">Enable this streamer</span>
-                </label>
                 <label>
                     <span data-i18n="table.screenId">Screen ID</span>
                     <input id="streamerScreenIdInput" type="text" autocomplete="off" spellcheck="false">
+                    <small id="streamerValidationStatus" class="field-help validation-status" aria-live="polite" hidden></small>
                     <small class="field-help" data-i18n="streamer.helpScreenId">Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.</small>
                 </label>
                 <label>
@@ -346,6 +342,7 @@
                     "common.close": "Close",
                     "common.cancel": "Cancel",
                     "common.seconds": "seconds",
+                    "streamer.checkButton": "Check Status",
                     "streamer.enabledLabel": "Enable this streamer",
                     "streamer.helpScreenId": "Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.",
                     "streamer.helpSchedule": "How often the recorder checks this streamer. Example: 5 means every 5 seconds.",
@@ -416,6 +413,7 @@
                     "common.close": "關閉",
                     "common.cancel": "取消",
                     "common.seconds": "秒",
+                    "streamer.checkButton": "檢查狀態",
                     "streamer.enabledLabel": "啟用這位直播主",
                     "streamer.helpScreenId": "請填 TwitCasting 網址中 `twitcasting.tv/` 後面的那段 ID。",
                     "streamer.helpSchedule": "這是檢查直播是否開始的頻率，例如 5 代表每 5 秒檢查一次。",

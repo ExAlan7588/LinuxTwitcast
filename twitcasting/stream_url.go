@@ -34,6 +34,7 @@ var httpClient = &http.Client{
 var (
 	ErrStreamOffline    = errors.New("live stream is offline")
 	ErrPasswordRequired = errors.New("live stream requires a password")
+	ErrStreamerNotFound = errors.New("streamer screen-id was not found")
 )
 
 type streamPageInfo struct {
@@ -43,8 +44,43 @@ type streamPageInfo struct {
 	passwordRequired bool
 }
 
+type StreamerProfile struct {
+	ScreenID         string
+	StreamerName     string
+	Title            string
+	AvatarURL        string
+	PasswordRequired bool
+}
+
 func GetWSStreamUrl(streamer string) (record.StreamLookupResult, error) {
 	return GetWSStreamUrlWithPassword(streamer, "")
+}
+
+// 新增直播主时只需要确认主页存在并能取到基础资料，不要求对方当前正在直播。
+func LookupStreamerProfile(streamer string) (StreamerProfile, error) {
+	screenID := strings.TrimSpace(streamer)
+	if screenID == "" {
+		return StreamerProfile{}, errors.New("screen-id is required")
+	}
+
+	pageInfo, statusCode, err := fetchStreamInfoWithStatus(screenID)
+	if err != nil {
+		return StreamerProfile{}, err
+	}
+	if statusCode == http.StatusNotFound {
+		return StreamerProfile{}, ErrStreamerNotFound
+	}
+	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		return StreamerProfile{}, fmt.Errorf("unexpected TwitCasting status: %d", statusCode)
+	}
+
+	return StreamerProfile{
+		ScreenID:         screenID,
+		StreamerName:     pageInfo.streamerName,
+		Title:            pageInfo.title,
+		AvatarURL:        pageInfo.avatarURL,
+		PasswordRequired: pageInfo.passwordRequired,
+	}, nil
 }
 
 func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupResult, error) {
@@ -165,23 +201,31 @@ func sanitizeFilename(name string) string {
 }
 
 func fetchStreamInfo(streamer string) streamPageInfo {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprint(baseDomain, "/", streamer), nil)
+	info, _, err := fetchStreamInfoWithStatus(streamer)
 	if err != nil {
 		return streamPageInfo{streamerName: streamer}
+	}
+	return info
+}
+
+func fetchStreamInfoWithStatus(streamer string) (streamPageInfo, int, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprint(baseDomain, "/", streamer), nil)
+	if err != nil {
+		return streamPageInfo{streamerName: streamer}, 0, err
 	}
 	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return streamPageInfo{streamerName: streamer}
+		return streamPageInfo{streamerName: streamer}, 0, err
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return streamPageInfo{streamerName: streamer}
+		return streamPageInfo{streamerName: streamer}, resp.StatusCode, err
 	}
-	return parseStreamPageInfo(streamer, string(bodyBytes))
+	return parseStreamPageInfo(streamer, string(bodyBytes)), resp.StatusCode, nil
 }
 
 func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {

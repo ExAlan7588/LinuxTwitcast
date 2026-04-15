@@ -7,7 +7,18 @@ const langState = { value: "EN" };
 const themeState = { value: "dark" };
 const logState = { lines: [], hideOffline: true, filteredCount: 0, loaded: false };
 const appState = { status: null, files: null, streamers: [] };
-const streamerModalState = { index: null, folderTouched: false, rawSchedule: "" };
+const streamerModalState = {
+    index: null,
+    folderTouched: false,
+    rawSchedule: "",
+    initialScreenId: "",
+    verifiedScreenId: "",
+    validationTone: "muted",
+    validationKey: "",
+    validationParams: {}
+};
+const RECORDINGS_ROOT_LABEL = "Recordings";
+const RECORDINGS_DISPLAY_ROOT = "/Recordings";
 const STREAMER_FOLDER_PREFIX = "Recordings/";
 const LEGACY_STREAMER_FOLDER_PREFIX = "Recording/";
 let botRestartPending = false;
@@ -105,6 +116,7 @@ const I18N = {
         "files.download": "Download",
         "files.delete": "Delete",
         "files.deleteConfirm": "Delete {name}?",
+        "files.deleteRecursiveConfirm": "Delete folder {name} and all nested files?",
         "files.deleted": "{name} was deleted.",
         "files.methodAudio": "audio",
         "files.methodDocument": "document",
@@ -151,6 +163,13 @@ const I18N = {
         "streamer.modalTitleEdit": "Edit Streamer",
         "streamer.modalSaveAdd": "Add to List",
         "streamer.modalSaveEdit": "Update Entry",
+        "streamer.checkButton": "Check Status",
+        "streamer.checking": "Checking...",
+        "streamer.checkNeededAdd": "Check this screen ID before adding it to the list.",
+        "streamer.checkNeededEdit": "This screen ID changed. Check it again before saving.",
+        "streamer.checkOk": "Screen ID verified. Streamer name: {name}. You can save this entry now.",
+        "streamer.checkOkPassword": "Screen ID verified. Streamer name: {name}. This channel uses a password-protected page, so fill the password field before recording.",
+        "streamer.checkFailed": "Check failed: {message}",
         "streamer.enabledLabel": "Enable this streamer",
         "streamer.helpScreenId": "Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.",
         "streamer.helpSchedule": "How often the recorder checks this streamer. Example: 5 means every 5 seconds.",
@@ -252,6 +271,7 @@ const I18N = {
         "files.download": "下載",
         "files.delete": "刪除",
         "files.deleteConfirm": "確定要刪除 {name} 嗎？",
+        "files.deleteRecursiveConfirm": "確定要刪除資料夾 {name} 與裡面的所有檔案嗎？",
         "files.deleted": "{name} 已刪除。",
         "files.methodAudio": "音訊",
         "files.methodDocument": "文件",
@@ -298,6 +318,13 @@ const I18N = {
         "streamer.modalTitleEdit": "編輯直播主",
         "streamer.modalSaveAdd": "加入清單",
         "streamer.modalSaveEdit": "更新資料",
+        "streamer.checkButton": "檢查狀態",
+        "streamer.checking": "檢查中...",
+        "streamer.checkNeededAdd": "加入清單前，請先檢查這個 Screen ID。",
+        "streamer.checkNeededEdit": "你已經修改了 Screen ID，儲存前請重新檢查。",
+        "streamer.checkOk": "Screen ID 驗證通過，直播主名稱是 {name}，現在可以儲存這筆資料。",
+        "streamer.checkOkPassword": "Screen ID 驗證通過，直播主名稱是 {name}。這個頻道使用密碼保護頁面，開始錄影前記得填入直播密碼。",
+        "streamer.checkFailed": "檢查失敗：{message}",
         "streamer.enabledLabel": "啟用這位直播主",
         "streamer.helpScreenId": "請填 TwitCasting 網址中 `twitcasting.tv/` 後面的那段 ID。",
         "streamer.helpSchedule": "這是檢查直播是否開始的頻率，例如 5 代表每 5 秒檢查一次。",
@@ -351,11 +378,12 @@ function cacheElements() {
     ui.streamerModal = document.getElementById("streamerModal");
     ui.streamerModalBackdrop = document.getElementById("streamerModalBackdrop");
     ui.streamerModalTitle = document.getElementById("streamerModalTitle");
+    ui.checkStreamerModalBtn = document.getElementById("checkStreamerModalBtn");
     ui.closeStreamerModalBtn = document.getElementById("closeStreamerModalBtn");
     ui.cancelStreamerModalBtn = document.getElementById("cancelStreamerModalBtn");
     ui.saveStreamerModalBtn = document.getElementById("saveStreamerModalBtn");
-    ui.streamerEnabledInput = document.getElementById("streamerEnabledInput");
     ui.streamerScreenIdInput = document.getElementById("streamerScreenIdInput");
+    ui.streamerValidationStatus = document.getElementById("streamerValidationStatus");
     ui.streamerScheduleSecondsInput = document.getElementById("streamerScheduleSecondsInput");
     ui.streamerScheduleNotice = document.getElementById("streamerScheduleNotice");
     ui.streamerFolderSuffixInput = document.getElementById("streamerFolderSuffixInput");
@@ -380,7 +408,6 @@ function cacheElements() {
     ui.telegramKeepInput = document.getElementById("telegramKeepInput");
     ui.telegramTestBtn = document.getElementById("telegramTestBtn");
 
-    ui.fileRootSelect = document.getElementById("fileRootSelect");
     ui.filePathLabel = document.getElementById("filePathLabel");
     ui.fileUpBtn = document.getElementById("fileUpBtn");
     ui.filesBody = document.getElementById("filesBody");
@@ -449,6 +476,7 @@ function bindEvents() {
     ui.restartBotBtn.addEventListener("click", () => restartBot().catch(handleError));
     ui.addStreamerBtn.addEventListener("click", () => openStreamerModal());
     ui.streamerGuideBtn.addEventListener("click", openStreamerGuideModal);
+    ui.checkStreamerModalBtn.addEventListener("click", () => checkStreamerFromModal().catch(handleError));
     ui.closeStreamerModalBtn.addEventListener("click", closeStreamerModal);
     ui.cancelStreamerModalBtn.addEventListener("click", closeStreamerModal);
     ui.streamerModalBackdrop.addEventListener("click", closeStreamerModal);
@@ -459,13 +487,12 @@ function bindEvents() {
             handleError(error);
         }
     });
-    ui.streamerScreenIdInput.addEventListener("input", syncFolderSuffixFromScreenId);
+    ui.streamerScreenIdInput.addEventListener("input", handleStreamerScreenIdInput);
     ui.streamerFolderSuffixInput.addEventListener("input", () => {
         streamerModalState.folderTouched = true;
     });
     ui.closeStreamerGuideModalBtn.addEventListener("click", closeStreamerGuideModal);
     ui.streamerGuideModalBackdrop.addEventListener("click", closeStreamerGuideModal);
-    ui.fileRootSelect.addEventListener("change", () => browseFiles(ui.fileRootSelect.value, "").catch(handleError));
     ui.fileUpBtn.addEventListener("click", () => browseFiles(fileState.root, parentPath(fileState.path)).catch(handleError));
     ui.fileRefreshBtn.addEventListener("click", () => browseFiles(fileState.root, fileState.path).catch(handleError));
     ui.logsRefreshBtn.addEventListener("click", () => loadLogs().catch(handleError));
@@ -565,10 +592,14 @@ async function loadStatus() {
     const data = await api("/api/status");
     appState.status = data;
     renderStatus(data);
-    renderFileRoots(data.file_roots || []);
+    const recordingsRoot = renderFileRoots(data.file_roots || []);
 
-    if (!fileState.root && data.file_roots?.length) {
-        await browseFiles(data.file_roots[0].root, "");
+    if (!appState.files && recordingsRoot?.root) {
+        if (recordingsRoot.exists) {
+            await browseFiles(recordingsRoot.root, "");
+        } else {
+            renderFiles({ root: recordingsRoot.root, path: "", entries: [] });
+        }
     }
 }
 
@@ -576,11 +607,15 @@ async function loadSettings() {
     const settings = await api("/api/settings");
     renderSettings(settings);
 
-    if (!fileState.root) {
+    if (!appState.files) {
         const roots = await api("/api/files/roots");
-        renderFileRoots(roots);
-        if (roots.length) {
-            await browseFiles(roots[0].root, "");
+        const recordingsRoot = renderFileRoots(roots);
+        if (recordingsRoot?.root) {
+            if (recordingsRoot.exists) {
+                await browseFiles(recordingsRoot.root, "");
+            } else {
+                renderFiles({ root: recordingsRoot.root, path: "", entries: [] });
+            }
         }
     }
 }
@@ -748,8 +783,22 @@ function renderStreamers(streamers) {
 
 function createStreamerRow(streamer = {}, index) {
     const row = document.createElement("tr");
+    const enabledCell = document.createElement("td");
+    const screenIdCell = document.createElement("td");
+    const scheduleCell = document.createElement("td");
+    const passwordCell = document.createElement("td");
+    const folderCell = document.createElement("td");
     const actionsCell = document.createElement("td");
     actionsCell.className = "actions-cell";
+    screenIdCell.className = "mono";
+    folderCell.className = "mono";
+
+    const enabledButton = document.createElement("button");
+    enabledButton.type = "button";
+    enabledButton.className = `streamer-toggle ${streamer.enabled ? "enabled" : "disabled"}`;
+    enabledButton.textContent = streamer.enabled ? t("common.enabled") : t("common.disabled");
+    enabledButton.addEventListener("click", () => toggleStreamerEnabled(index));
+    enabledCell.appendChild(enabledButton);
 
     const editButton = document.createElement("button");
     editButton.type = "button";
@@ -764,15 +813,12 @@ function createStreamerRow(streamer = {}, index) {
     removeButton.addEventListener("click", () => removeStreamer(index));
 
     actionsCell.append(editButton, removeButton);
+    screenIdCell.textContent = streamer["screen-id"] || "—";
+    scheduleCell.textContent = formatScheduleDisplay(streamer.schedule);
+    passwordCell.textContent = streamer.password ? t("streamers.passwordSet") : t("streamers.passwordMissing");
+    folderCell.textContent = formatStreamerFolder(streamer.folder, streamer["screen-id"]);
 
-    row.innerHTML = `
-        <td><span class="mini-badge ${streamer.enabled ? "enabled" : "disabled"}">${escapeHtml(streamer.enabled ? t("common.enabled") : t("common.disabled"))}</span></td>
-        <td class="mono">${escapeHtml(streamer["screen-id"] || "—")}</td>
-        <td>${escapeHtml(formatScheduleDisplay(streamer.schedule))}</td>
-        <td>${escapeHtml(streamer.password ? t("streamers.passwordSet") : t("streamers.passwordMissing"))}</td>
-        <td class="mono">${escapeHtml(formatStreamerFolder(streamer.folder, streamer["screen-id"]))}</td>
-    `;
-    row.appendChild(actionsCell);
+    row.append(enabledCell, screenIdCell, scheduleCell, passwordCell, folderCell, actionsCell);
 
     return row;
 }
@@ -798,12 +844,14 @@ function openStreamerModal(index = null) {
     streamerModalState.index = isEdit ? index : null;
     streamerModalState.folderTouched = isEdit;
     streamerModalState.rawSchedule = streamer.schedule && scheduleToSeconds(streamer.schedule) === null ? streamer.schedule : "";
+    streamerModalState.initialScreenId = String(streamer["screen-id"] || "").trim();
+    streamerModalState.verifiedScreenId = isEdit ? streamerModalState.initialScreenId : "";
 
-    ui.streamerEnabledInput.checked = Boolean(streamer.enabled);
     ui.streamerScreenIdInput.value = streamer["screen-id"] || "";
     ui.streamerScheduleSecondsInput.value = String(scheduleToSeconds(streamer.schedule) || 5);
     ui.streamerFolderSuffixInput.value = extractStreamerFolderSuffix(streamer.folder, streamer["screen-id"]);
     ui.streamerPasswordInput.value = streamer.password || "";
+    setStreamerValidationState(isEdit ? "muted" : "warn", isEdit ? "" : "streamer.checkNeededAdd");
 
     updateStreamerModalCopy();
     openModalShell(ui.streamerModal, ui.streamerScreenIdInput);
@@ -813,6 +861,9 @@ function closeStreamerModal() {
     streamerModalState.index = null;
     streamerModalState.folderTouched = false;
     streamerModalState.rawSchedule = "";
+    streamerModalState.initialScreenId = "";
+    streamerModalState.verifiedScreenId = "";
+    setStreamerValidationState("muted", "");
     ui.streamerModal.hidden = true;
     document.body.classList.remove("modal-open");
 }
@@ -843,12 +894,17 @@ function updateStreamerModalCopy() {
         ui.streamerScheduleNotice.hidden = true;
         ui.streamerScheduleNotice.textContent = "";
     }
+    renderStreamerValidationState();
+    updateStreamerSaveState();
 }
 
 function saveStreamerFromModal() {
     const screenId = ui.streamerScreenIdInput.value.trim();
     if (!screenId) {
         throw new Error(t("streamer.requiredScreenId"));
+    }
+    if (!canSaveStreamerFromModal()) {
+        throw new Error(t(Number.isInteger(streamerModalState.index) ? "streamer.checkNeededEdit" : "streamer.checkNeededAdd"));
     }
 
     const seconds = Number.parseInt(ui.streamerScheduleSecondsInput.value, 10);
@@ -857,8 +913,9 @@ function saveStreamerFromModal() {
     }
 
     const folderSuffix = (ui.streamerFolderSuffixInput.value.trim() || screenId).replace(/^\/+|\/+$/g, "");
+    const currentStreamer = Number.isInteger(streamerModalState.index) ? appState.streamers[streamerModalState.index] : null;
     const nextStreamer = {
-        enabled: ui.streamerEnabledInput.checked,
+        enabled: currentStreamer ? Boolean(currentStreamer.enabled) : true,
         "screen-id": screenId,
         schedule: buildEverySchedule(seconds),
         folder: buildStreamerFolder(folderSuffix),
@@ -889,6 +946,16 @@ function removeStreamer(index) {
     showToast(t("streamers.pendingSave"));
 }
 
+function toggleStreamerEnabled(index) {
+    const streamer = appState.streamers[index];
+    if (!streamer) {
+        return;
+    }
+    streamer.enabled = !streamer.enabled;
+    renderStreamers(appState.streamers);
+    showToast(t("streamers.pendingSave"));
+}
+
 function defaultStreamerEntry() {
     return {
         enabled: true,
@@ -899,15 +966,94 @@ function defaultStreamerEntry() {
     };
 }
 
-function syncFolderSuffixFromScreenId() {
-    if (streamerModalState.folderTouched) {
+function setStreamerValidationState(tone, key, params = {}) {
+    streamerModalState.validationTone = tone;
+    streamerModalState.validationKey = key;
+    streamerModalState.validationParams = params;
+}
+
+function renderStreamerValidationState() {
+    const hasMessage = Boolean(streamerModalState.validationKey);
+    ui.streamerValidationStatus.hidden = !hasMessage;
+    ui.streamerValidationStatus.className = `field-help validation-status${hasMessage && streamerModalState.validationTone !== "muted" ? ` is-${streamerModalState.validationTone}` : ""}`;
+    ui.streamerValidationStatus.textContent = hasMessage ? t(streamerModalState.validationKey, streamerModalState.validationParams) : "";
+}
+
+function canSaveStreamerFromModal() {
+    const screenId = ui.streamerScreenIdInput.value.trim();
+    if (!screenId) {
+        return false;
+    }
+    if (Number.isInteger(streamerModalState.index) && screenId === streamerModalState.initialScreenId) {
+        return true;
+    }
+    return screenId === streamerModalState.verifiedScreenId;
+}
+
+function updateStreamerSaveState() {
+    ui.saveStreamerModalBtn.disabled = !canSaveStreamerFromModal();
+}
+
+// Screen ID 一改就重置校验，避免旧的检查结果被误用到新目标上。
+function handleStreamerScreenIdInput() {
+    const screenId = ui.streamerScreenIdInput.value.trim();
+    if (Number.isInteger(streamerModalState.index) && screenId === streamerModalState.initialScreenId) {
+        streamerModalState.verifiedScreenId = streamerModalState.initialScreenId;
+        setStreamerValidationState("muted", "");
+        updateStreamerSaveState();
         return;
     }
-    ui.streamerFolderSuffixInput.value = ui.streamerScreenIdInput.value.trim();
+
+    streamerModalState.verifiedScreenId = "";
+    setStreamerValidationState("warn", "streamer.checkNeededAdd");
+    if (Number.isInteger(streamerModalState.index)) {
+        setStreamerValidationState("warn", "streamer.checkNeededEdit");
+    }
+    updateStreamerSaveState();
+}
+
+async function checkStreamerFromModal() {
+    const screenId = ui.streamerScreenIdInput.value.trim();
+    if (!screenId) {
+        throw new Error(t("streamer.requiredScreenId"));
+    }
+
+    setStreamerValidationState("muted", "streamer.checking");
+    renderStreamerValidationState();
+
+    await runButtonAction(ui.checkStreamerModalBtn, t("streamer.checking"), async () => {
+        try {
+            const result = await api("/api/streamers/check", {
+                method: "POST",
+                body: JSON.stringify({ screen_id: screenId })
+            });
+
+            streamerModalState.verifiedScreenId = screenId;
+            const streamerName = sanitizeFolderSuffix(result.streamer_name || screenId) || screenId;
+            if (!streamerModalState.folderTouched || !ui.streamerFolderSuffixInput.value.trim()) {
+                ui.streamerFolderSuffixInput.value = streamerName;
+            }
+            setStreamerValidationState(
+                "success",
+                result.password_required ? "streamer.checkOkPassword" : "streamer.checkOk",
+                { name: streamerName }
+            );
+            updateStreamerSaveState();
+        } catch (error) {
+            streamerModalState.verifiedScreenId = "";
+            setStreamerValidationState("error", "streamer.checkFailed", { message: error.message || t("common.requestFailed") });
+            updateStreamerSaveState();
+            throw error;
+        }
+    });
+}
+
+function sanitizeFolderSuffix(value) {
+    return String(value || "").trim().replace(/^\/+|\/+$/g, "");
 }
 
 function buildStreamerFolder(folderSuffix) {
-    return `${STREAMER_FOLDER_PREFIX}${String(folderSuffix || "").replace(/^\/+|\/+$/g, "")}`;
+    return `${STREAMER_FOLDER_PREFIX}${sanitizeFolderSuffix(folderSuffix)}`;
 }
 
 function extractStreamerFolderSuffix(folder, screenId) {
@@ -1147,24 +1293,15 @@ function waitForBotRecovery() {
 
 function renderFileRoots(roots) {
     if (!Array.isArray(roots) || !roots.length) {
-        ui.fileRootSelect.innerHTML = "";
-        return;
+        return null;
     }
-
-    const currentValue = fileState.root || ui.fileRootSelect.value;
-    ui.fileRootSelect.innerHTML = "";
-    roots.forEach((root) => {
-        const option = document.createElement("option");
-        option.value = root.root;
-        option.textContent = root.exists ? `${root.label} · ${root.root}` : `${root.label} · ${root.root} (${t("files.notCreatedYet")})`;
-        ui.fileRootSelect.appendChild(option);
-    });
-
-    const matched = roots.find((root) => root.root === currentValue) || roots[0];
-    ui.fileRootSelect.value = matched.root;
-    if (!fileState.root) {
-        fileState.root = matched.root;
+    const recordingsRoot = roots.find((root) => root.label === RECORDINGS_ROOT_LABEL) ||
+        roots.find((root) => /[\\/]Recordings$/i.test(String(root.root || "")));
+    if (!recordingsRoot) {
+        return null;
     }
+    fileState.root = recordingsRoot.root;
+    return recordingsRoot;
 }
 
 async function browseFiles(root, path) {
@@ -1180,8 +1317,7 @@ async function browseFiles(root, path) {
 function renderFiles(data) {
     fileState.root = data.root;
     fileState.path = data.path || "";
-    ui.fileRootSelect.value = data.root;
-    ui.filePathLabel.textContent = `/${data.path || ""}`.replace(/\/$/, "") || "/";
+    ui.filePathLabel.textContent = buildFileManagerPath(fileState.path);
     ui.fileUpBtn.disabled = !data.path;
 
     ui.filesBody.innerHTML = "";
@@ -1264,7 +1400,10 @@ function createFileRow(entry) {
         deleteButton.className = "table-link";
         deleteButton.textContent = prefixedActionLabel(actionsCell.childNodes.length > 0, t("files.delete"));
         deleteButton.addEventListener("click", async () => {
-            if (!window.confirm(t("files.deleteConfirm", { name: entry.name }))) {
+            const confirmMessage = entry.type === "dir" ?
+                t("files.deleteRecursiveConfirm", { name: entry.name }) :
+                t("files.deleteConfirm", { name: entry.name });
+            if (!window.confirm(confirmMessage)) {
                 return;
             }
             await api("/api/files/delete", {
@@ -1283,6 +1422,11 @@ function createFileRow(entry) {
 
 function prefixedActionLabel(hasPrefix, label) {
     return `${hasPrefix ? " / " : ""}${label}`;
+}
+
+function buildFileManagerPath(path) {
+    const relative = String(path || "").replace(/^\/+|\/+$/g, "");
+    return relative ? `${RECORDINGS_DISPLAY_ROOT}/${relative}` : RECORDINGS_DISPLAY_ROOT;
 }
 
 function parentPath(path) {

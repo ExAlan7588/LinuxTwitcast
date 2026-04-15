@@ -3,6 +3,8 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/jzhang046/croned-twitcasting-recorder/service"
 	"github.com/jzhang046/croned-twitcasting-recorder/telegram"
+	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
 )
 
 func TestHandleBotRestartSchedulesRestart(t *testing.T) {
@@ -147,4 +150,195 @@ func TestHandleVersionCheckReturnsJSON(t *testing.T) {
 	if payload.Message == "" {
 		t.Fatal("expected a human-readable message")
 	}
+}
+
+func TestHandleStreamerCheckReturnsProfile(t *testing.T) {
+	originalLookup := lookupStreamerProfile
+	lookupStreamerProfile = func(screenID string) (twitcasting.StreamerProfile, error) {
+		if screenID != "alice" {
+			t.Fatalf("unexpected screenID: %s", screenID)
+		}
+		return twitcasting.StreamerProfile{
+			ScreenID:         "alice",
+			StreamerName:     "Alice Channel",
+			Title:            "Night Stream",
+			AvatarURL:        "https://example.test/avatar.jpg",
+			PasswordRequired: false,
+		}, nil
+	}
+	t.Cleanup(func() {
+		lookupStreamerProfile = originalLookup
+	})
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: t.TempDir(),
+	}, service.NewManager(), nil)
+
+	body := bytes.NewBufferString(`{"screen_id":"alice"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/streamers/check", body)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload["screen_id"] != "alice" {
+		t.Fatalf("unexpected screen_id: %#v", payload["screen_id"])
+	}
+	if payload["streamer_name"] != "Alice Channel" {
+		t.Fatalf("unexpected streamer_name: %#v", payload["streamer_name"])
+	}
+}
+
+func TestHandleStreamerCheckReturnsNotFoundForUnknownScreenID(t *testing.T) {
+	originalLookup := lookupStreamerProfile
+	lookupStreamerProfile = func(string) (twitcasting.StreamerProfile, error) {
+		return twitcasting.StreamerProfile{}, twitcasting.ErrStreamerNotFound
+	}
+	t.Cleanup(func() {
+		lookupStreamerProfile = originalLookup
+	})
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: t.TempDir(),
+	}, service.NewManager(), nil)
+
+	body := bytes.NewBufferString(`{"screen_id":"ghost"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/streamers/check", body)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleStreamerCheckRejectsBlankScreenID(t *testing.T) {
+	originalLookup := lookupStreamerProfile
+	lookupStreamerProfile = func(string) (twitcasting.StreamerProfile, error) {
+		return twitcasting.StreamerProfile{}, errors.New("should not be called")
+	}
+	t.Cleanup(func() {
+		lookupStreamerProfile = originalLookup
+	})
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: t.TempDir(),
+	}, service.NewManager(), nil)
+
+	body := bytes.NewBufferString(`{"screen_id":"   "}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/streamers/check", body)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleFileDeleteRemovesNestedDirectoryRecursively(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	targetDir := filepath.Join(rootDir, "Recordings", "urarachan_u_u", "nested")
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(targetDir, "clip.ts"), []byte("test"), 0644); err != nil {
+		t.Fatalf("write nested file: %v", err)
+	}
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body := bytes.NewBufferString(fmt.Sprintf(`{"root":%q,"path":"urarachan_u_u"}`, filepath.Join(rootDir, "Recordings")))
+	req := httptest.NewRequest(http.MethodPost, "/api/files/delete", body)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(rootDir, "Recordings", "urarachan_u_u")); !os.IsNotExist(err) {
+		t.Fatalf("expected directory to be removed, stat err=%v", err)
+	}
+}
+
+func TestHandleFileDeleteRejectsNonRecordingsRoot(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	targetFile := filepath.Join(rootDir, "notes.txt")
+	if err := os.WriteFile(targetFile, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write target file: %v", err)
+	}
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body := bytes.NewBufferString(fmt.Sprintf(`{"root":%q,"path":"notes.txt"}`, rootDir))
+	req := httptest.NewRequest(http.MethodPost, "/api/files/delete", body)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleFileDeleteStillRemovesFilesInsideRecordings(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	recordingsRoot := filepath.Join(rootDir, "Recordings")
+	if err := os.MkdirAll(recordingsRoot, 0755); err != nil {
+		t.Fatalf("mkdir recordings root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(recordingsRoot, "clip.ts"), []byte("test"), 0644); err != nil {
+		t.Fatalf("write target file: %v", err)
+	}
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body := bytes.NewBufferString(fmt.Sprintf(`{"root":%q,"path":"clip.ts"}`, recordingsRoot))
+	req := httptest.NewRequest(http.MethodPost, "/api/files/delete", body)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(recordingsRoot, "clip.ts")); !os.IsNotExist(err) {
+		t.Fatalf("expected file to be removed, stat err=%v", err)
+	}
+}
+
+func chdirTestRoot(t *testing.T, rootDir string) {
+	t.Helper()
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(rootDir); err != nil {
+		t.Fatalf("chdir temp root: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
 }

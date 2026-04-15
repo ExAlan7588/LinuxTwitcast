@@ -24,10 +24,13 @@ import (
 	"github.com/jzhang046/croned-twitcasting-recorder/discord"
 	"github.com/jzhang046/croned-twitcasting-recorder/service"
 	"github.com/jzhang046/croned-twitcasting-recorder/telegram"
+	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
 )
 
 //go:embed assets/*
 var assets embed.FS
+
+var lookupStreamerProfile = twitcasting.LookupStreamerProfile
 
 type Options struct {
 	Address  string
@@ -92,6 +95,7 @@ func NewServer(options Options, manager *service.Manager, restartRequested chan<
 	mux.Handle("/api/status", server.withAuth(http.HandlerFunc(server.handleStatus)))
 	mux.Handle("/api/version/check", server.withAuth(http.HandlerFunc(server.handleVersionCheck)))
 	mux.Handle("/api/settings", server.withAuth(http.HandlerFunc(server.handleSettings)))
+	mux.Handle("/api/streamers/check", server.withAuth(http.HandlerFunc(server.handleStreamerCheck)))
 	mux.Handle("/api/discord/test", server.withAuth(http.HandlerFunc(server.handleDiscordTest)))
 	mux.Handle("/api/telegram/test", server.withAuth(http.HandlerFunc(server.handleTelegramTest)))
 	mux.Handle("/api/recorder/start", server.withAuth(http.HandlerFunc(server.handleRecorderStart)))
@@ -212,6 +216,49 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.methodNotAllowed(w)
 	}
+}
+
+func (s *Server) handleStreamerCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		ScreenID string `json:"screen_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	screenID := strings.TrimSpace(req.ScreenID)
+	if screenID == "" {
+		s.writeError(w, http.StatusBadRequest, errors.New("screen-id is required"))
+		return
+	}
+
+	// 这里只检查主页是否存在并能解析主播资料，避免把“未开播”误判成无效 screen-id。
+	profile, err := lookupStreamerProfile(screenID)
+	if err != nil {
+		status := http.StatusBadGateway
+		if errors.Is(err, twitcasting.ErrStreamerNotFound) {
+			status = http.StatusNotFound
+		} else if strings.Contains(err.Error(), "screen-id is required") {
+			status = http.StatusBadRequest
+		}
+		s.writeError(w, status, err)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"ok":                true,
+		"screen_id":         profile.ScreenID,
+		"streamer_name":     profile.StreamerName,
+		"title":             profile.Title,
+		"avatar_url":        profile.AvatarURL,
+		"password_required": profile.PasswordRequired,
+	})
 }
 
 // Test notifications read the temporary request payload so credentials can be checked before saving to disk.
@@ -506,6 +553,20 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	recordingsRoot, err := filepath.Abs(filepath.Join(s.options.RootDir, "Recordings"))
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !pathWithinRoot(recordingsRoot, targetPath) {
+		s.writeError(w, http.StatusBadRequest, errors.New("deletion is limited to the Recordings directory"))
+		return
+	}
+	if filepath.Clean(targetPath) == filepath.Clean(recordingsRoot) {
+		s.writeError(w, http.StatusBadRequest, errors.New("deleting the Recordings root is not supported"))
+		return
+	}
+
 	info, err := os.Lstat(targetPath)
 	if err != nil {
 		s.writeError(w, http.StatusNotFound, err)
@@ -516,7 +577,12 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.Remove(targetPath); err != nil {
+	if info.IsDir() {
+		err = os.RemoveAll(targetPath)
+	} else {
+		err = os.Remove(targetPath)
+	}
+	if err != nil {
 		s.writeError(w, http.StatusBadRequest, err)
 		return
 	}
