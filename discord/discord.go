@@ -252,6 +252,42 @@ func (n *Notifier) sendMessageToChannel(channelID, content string, e embed) (str
 	return "", fmt.Errorf("message ID not found in response")
 }
 
+func SendInvalidStreamerIDAlert(cfg Config, screenID string) {
+	if !cfg.Enabled || strings.TrimSpace(cfg.BotToken) == "" || strings.TrimSpace(cfg.NotifyChannelID) == "" {
+		return
+	}
+
+	n := NewNotifierFromConfig(cfg, screenID)
+	if n == nil {
+		return
+	}
+
+	e := embed{
+		Title: "TwitCasting ID已失效",
+		Url:   buildStreamURL(screenID),
+		Color: 0xe67e22,
+		Author: &author{
+			Name:    "@" + screenID,
+			Url:     buildStreamURL(screenID),
+			IconUrl: twitcastIcon,
+		},
+		Fields: []field{
+			{Name: "狀態", Value: "⚠️ **ID已失效**", Inline: true},
+			{Name: "Streamer", Value: "`@" + screenID + "`", Inline: true},
+			{Name: "建議處理", Value: "請到前端的 General & Streamer Settings 檢查並更新 screen-id。", Inline: false},
+		},
+		Footer: &footer{
+			Text:    "TwitCasting 取流與歸檔系統",
+			IconUrl: twitcastIcon,
+		},
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if _, err := n.sendMessageToChannel(cfg.NotifyChannelID, "", e); err != nil {
+		log.Printf("[Discord] Failed to send invalid streamer-id alert for [%s]: %v\n", screenID, err)
+	}
+}
+
 func (n *Notifier) editMessage(channelID, messageID string, e embed) error {
 	// PATCH only updates the embed; the original role-mention content is preserved by Discord.
 	payload := messagePayload{Embeds: []embed{e}}
