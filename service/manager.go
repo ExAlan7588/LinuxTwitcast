@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +46,11 @@ type streamWarning struct {
 	RetryAt time.Time
 }
 
+type memberOnlyNotification struct {
+	session  record.SessionInfo
+	notifier *discord.Notifier
+}
+
 type Manager struct {
 	mu sync.RWMutex
 
@@ -58,6 +64,7 @@ type Manager struct {
 	scheduledJobs    int
 	active           map[string]record.SessionInfo
 	warnings         map[string]streamWarning
+	memberOnly       map[string]memberOnlyNotification
 	lastError        string
 }
 
@@ -65,8 +72,9 @@ const passwordRetryCooldown = 2 * time.Minute
 
 func NewManager() *Manager {
 	return &Manager{
-		active:   make(map[string]record.SessionInfo),
-		warnings: make(map[string]streamWarning),
+		active:     make(map[string]record.SessionInfo),
+		warnings:   make(map[string]streamWarning),
+		memberOnly: make(map[string]memberOnlyNotification),
 	}
 }
 
@@ -189,6 +197,7 @@ func (m *Manager) Start() error {
 	m.scheduledJobs = scheduledJobs
 	m.active = make(map[string]record.SessionInfo)
 	m.warnings = make(map[string]streamWarning)
+	m.memberOnly = make(map[string]memberOnlyNotification)
 	m.lastError = ""
 	m.mu.Unlock()
 
@@ -253,6 +262,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.scheduledJobs = 0
 	m.active = make(map[string]record.SessionInfo)
 	m.warnings = make(map[string]streamWarning)
+	m.memberOnly = make(map[string]memberOnlyNotification)
 	if err != nil {
 		m.lastError = err.Error()
 	}
@@ -332,12 +342,33 @@ func (m *Manager) storeError(err error) {
 	m.lastError = err.Error()
 }
 
+func (m *Manager) shouldSkipStreamer(streamer string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if _, ok := m.active[streamer]; ok {
+		return true
+	}
+	if warning, ok := m.warnings[streamer]; ok && warning.Code == "stream_password_required" && !warning.RetryAt.IsZero() {
+		return time.Now().Before(warning.RetryAt)
+	}
+	return false
+}
+
 // 密码锁页会让高频排程不断重试；记录一个短冷却，避免每 5 秒都重复打目标页和刷日志。
 func (m *Manager) handleStreamLookup(streamer string, err error) {
 	var shouldNotifyInvalid bool
+	var startMemberOnly *memberOnlyNotification
+	var endMemberOnly *memberOnlyNotification
+
+	lookup, _ := twitcasting.LookupResultFromError(err)
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	if existing, ok := m.memberOnly[streamer]; ok && !errors.Is(err, twitcasting.ErrMemberOnlyLive) {
+		delete(m.memberOnly, streamer)
+		copy := existing
+		endMemberOnly = &copy
+	}
 
 	switch {
 	case err == nil:
@@ -349,12 +380,31 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 			RetryAt: time.Now().Add(passwordRetryCooldown),
 		}
 
-	case errors.Is(err, twitcasting.ErrStreamerNotFound):
-		prev, existed := m.warnings[streamer]
-		m.warnings[streamer] = streamWarning{
-			Code: "streamer_id_invalid",
+	case errors.Is(err, twitcasting.ErrMemberOnlyLive):
+		m.warnings[streamer] = streamWarning{Code: "stream_member_only"}
+		if _, exists := m.memberOnly[streamer]; !exists {
+			streamerName := strings.TrimSpace(lookup.StreamerName)
+			if streamerName == "" {
+				streamerName = streamer
+			}
+			entry := memberOnlyNotification{
+				session: record.SessionInfo{
+					Streamer:     streamer,
+					StreamerName: streamerName,
+					Title:        lookup.Title,
+					AvatarURL:    lookup.AvatarURL,
+					StartedAt:    time.Now(),
+				},
+				notifier: discord.NewNotifierFromConfig(discord.LoadConfig(), streamer),
+			}
+			m.memberOnly[streamer] = entry
+			copy := entry
+			startMemberOnly = &copy
 		}
 
+	case errors.Is(err, twitcasting.ErrStreamerNotFound):
+		prev, existed := m.warnings[streamer]
+		m.warnings[streamer] = streamWarning{Code: "streamer_id_invalid"}
 		if !existed || prev.Code != "streamer_id_invalid" {
 			shouldNotifyInvalid = true
 		}
@@ -362,7 +412,14 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 	case errors.Is(err, twitcasting.ErrStreamOffline):
 		delete(m.warnings, streamer)
 	}
+	m.mu.Unlock()
 
+	if startMemberOnly != nil && startMemberOnly.notifier != nil {
+		go startMemberOnly.notifier.NotifyMemberOnlyStart(startMemberOnly.session)
+	}
+	if endMemberOnly != nil && endMemberOnly.notifier != nil {
+		go endMemberOnly.notifier.NotifyMemberOnlyEnd(endMemberOnly.session)
+	}
 	if shouldNotifyInvalid {
 		go discord.SendInvalidStreamerIDAlert(discord.LoadConfig(), streamer)
 	}

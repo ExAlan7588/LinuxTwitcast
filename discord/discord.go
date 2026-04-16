@@ -144,6 +144,44 @@ type rolePayload struct {
 
 func buildStartEmbed(session record.SessionInfo, elapsed time.Duration) embed {
 	streamURL := buildStreamURL(session.Streamer)
+	fields := []field{
+		{Name: "直播狀態", Value: "🔴 **正在錄影中**", Inline: true},
+		{Name: "錄影時長", Value: fmt.Sprintf("⏱️ **%s**（持續更新）", formatDuration(elapsed)), Inline: true},
+		{Name: "直播頁面", Value: fmt.Sprintf("[點我前往直播間](%s)", streamURL), Inline: false},
+	}
+	return embed{
+		Title:     FormatTitle(session.StreamerName, session.Title),
+		Url:       streamURL,
+		Color:     colorLive,
+		Author:    buildEmbedAuthor(session, streamURL),
+		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
+		Fields:    fields,
+		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func buildEndEmbed(session record.SessionInfo, elapsed time.Duration) embed {
+	streamURL := buildStreamURL(session.Streamer)
+	fields := []field{
+		{Name: "直播狀態", Value: "⏹️ **錄影已結束**", Inline: true},
+		{Name: "總錄影時長", Value: fmt.Sprintf("⏱️ **%s**", formatDuration(elapsed)), Inline: true},
+		{Name: "直播頁面", Value: fmt.Sprintf("[點我查看直播主頁](%s)", streamURL), Inline: false},
+	}
+	return embed{
+		Title:     FormatTitle(session.StreamerName, session.Title),
+		Url:       streamURL,
+		Color:     colorArchive,
+		Author:    buildEmbedAuthor(session, streamURL),
+		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
+		Fields:    fields,
+		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func buildMemberOnlyStartEmbed(session record.SessionInfo) embed {
+	streamURL := buildStreamURL(session.Streamer)
 	return embed{
 		Title:     FormatTitle(session.StreamerName, session.Title),
 		Url:       streamURL,
@@ -151,8 +189,8 @@ func buildStartEmbed(session record.SessionInfo, elapsed time.Duration) embed {
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
 		Fields: []field{
-			{Name: "直播狀態", Value: "🔴 **正在錄影中**", Inline: true},
-			{Name: "錄影時長", Value: fmt.Sprintf("⏱️ **%s**（持續更新）", formatDuration(elapsed)), Inline: true},
+			{Name: "直播狀態", Value: "🔒 **會員限定直播**", Inline: true},
+			{Name: "錄製狀態", Value: "🚫 **未嘗試錄製**", Inline: true},
 			{Name: "直播頁面", Value: fmt.Sprintf("[點我前往直播間](%s)", streamURL), Inline: false},
 		},
 		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
@@ -160,7 +198,7 @@ func buildStartEmbed(session record.SessionInfo, elapsed time.Duration) embed {
 	}
 }
 
-func buildEndEmbed(session record.SessionInfo, elapsed time.Duration) embed {
+func buildMemberOnlyEndEmbed(session record.SessionInfo) embed {
 	streamURL := buildStreamURL(session.Streamer)
 	return embed{
 		Title:     FormatTitle(session.StreamerName, session.Title),
@@ -169,8 +207,8 @@ func buildEndEmbed(session record.SessionInfo, elapsed time.Duration) embed {
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
 		Fields: []field{
-			{Name: "直播狀態", Value: "⏹️ **錄影已結束**", Inline: true},
-			{Name: "總錄影時長", Value: fmt.Sprintf("⏱️ **%s**", formatDuration(elapsed)), Inline: true},
+			{Name: "直播狀態", Value: "🗂️ **會員限定直播已結束**", Inline: true},
+			{Name: "錄製狀態", Value: "🚫 **未錄製**", Inline: true},
 			{Name: "直播頁面", Value: fmt.Sprintf("[點我查看直播主頁](%s)", streamURL), Inline: false},
 		},
 		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
@@ -313,6 +351,60 @@ func (n *Notifier) deleteMessage(channelID, messageID string) error {
 }
 
 // ── Public lifecycle methods ─────────────────────────────────────────────────
+
+// NotifyMemberOnlyStart sends a notify-channel message for a members-only live without
+// starting the periodic duration updater.
+func (n *Notifier) NotifyMemberOnlyStart(session record.SessionInfo) {
+	if n == nil {
+		return
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	mention := n.roleMentionContent()
+	e := buildMemberOnlyStartEmbed(session)
+	msgID, err := n.sendMessageToChannel(n.notifyChannelID, mention, e)
+	if err != nil {
+		log.Printf("[Discord] Failed to send members-only start notification: %v\n", err)
+		return
+	}
+	n.messageID = msgID
+
+	AddMessageMapping(msgID, n.screenID)
+	log.Printf("[Discord] Members-only start notification sent (msgID=%s)\n", msgID)
+}
+
+// NotifyMemberOnlyEnd archives the members-only embed and deletes the original notify message.
+func (n *Notifier) NotifyMemberOnlyEnd(session record.SessionInfo) {
+	if n == nil {
+		return
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	endEmbed := buildMemberOnlyEndEmbed(session)
+	originalMsgID := n.messageID
+
+	RemoveMessageMapping(originalMsgID)
+
+	if n.archiveChannelID != "" {
+		if _, err := n.sendMessageToChannel(n.archiveChannelID, "", endEmbed); err != nil {
+			log.Printf("[Discord] Failed to send members-only archive notification: %v\n", err)
+		} else {
+			log.Printf("[Discord] Members-only archive notification sent to channel %s\n", n.archiveChannelID)
+		}
+	}
+
+	if originalMsgID != "" {
+		if err := n.deleteMessage(n.notifyChannelID, originalMsgID); err != nil {
+			log.Printf("[Discord] Failed to delete original members-only message: %v\n", err)
+		} else {
+			log.Printf("[Discord] Original members-only message %s deleted\n", originalMsgID)
+		}
+		n.messageID = ""
+	}
+}
 
 // NotifyStart sends the initial "recording started" notification and begins
 // periodic duration updates.

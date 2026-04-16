@@ -35,13 +35,49 @@ var (
 	ErrStreamOffline    = errors.New("live stream is offline")
 	ErrPasswordRequired = errors.New("live stream requires a password")
 	ErrStreamerNotFound = errors.New("streamer screen-id was not found")
+	ErrMemberOnlyLive   = errors.New("live stream is members-only")
 )
+
+type streamLookupError struct {
+	err    error
+	result record.StreamLookupResult
+}
+
+func (e *streamLookupError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
+
+func (e *streamLookupError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func wrapStreamLookupError(err error, result record.StreamLookupResult) error {
+	if err == nil {
+		return nil
+	}
+	return &streamLookupError{err: err, result: result}
+}
+
+func LookupResultFromError(err error) (record.StreamLookupResult, bool) {
+	var target *streamLookupError
+	if errors.As(err, &target) && target != nil {
+		return target.result, true
+	}
+	return record.StreamLookupResult{}, false
+}
 
 type streamPageInfo struct {
 	streamerName     string
 	title            string
 	avatarURL        string
 	passwordRequired bool
+	memberOnly       bool
 }
 
 type StreamerProfile struct {
@@ -117,6 +153,9 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 
 	if err = checkStreamOnline(jq); err != nil {
 		return result, err
+	}
+	if pageInfo.memberOnly {
+		return result, wrapStreamLookupError(ErrMemberOnlyLive, result)
 	}
 
 	// Try to get URL directly
@@ -234,6 +273,7 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 		title:        "",
 	}
 	info.passwordRequired = requiresStreamPassword(bodyStr)
+	info.memberOnly = requiresMembershipAccess(bodyStr)
 
 	// --- Extract streamer display name ---
 	// TwitCasting <title> when live: "STREAM_TITLE - NAME (@screen-id) - Twitcast"
@@ -266,7 +306,7 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 		}
 	}
 
-// --- Extract stream title ---
+	// --- Extract stream title ---
 	// Only use twitter:title as a fallback.
 	// If we already got a title earlier, do not overwrite it.
 	twitterTitleRegex := regexp.MustCompile(`<meta\s+name="twitter:title"\s+content="([^"]*)"`)
@@ -365,6 +405,36 @@ func requiresStreamPassword(body string) bool {
 	lower := strings.ToLower(body)
 	return strings.Contains(lower, "tw-player-page-lock-empty-state") &&
 		strings.Contains(lower, `name="password"`)
+}
+
+// 会员限定页和密码锁页一样，都会出现锁定空状态；这里用多个文案与 join membership 链接做 best-effort 识别。
+func requiresMembershipAccess(body string) bool {
+	lower := strings.ToLower(body)
+	if !strings.Contains(lower, "tw-player-page-lock-empty-state") {
+		return false
+	}
+
+	markers := []string{
+		"members-only stream",
+		"member-only stream",
+		"members only stream",
+		"member only stream",
+		"members-only",
+		"メンバーシップ限定配信",
+		"メンバー限定配信",
+		"會員限定直播",
+		"会员限定直播",
+		"會員限定配信",
+		"会员限定配信",
+		"membershipjoinplans.php?u=",
+		"membershipjoindetail.php?u=",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lower, strings.ToLower(marker)) {
+			return true
+		}
+	}
+	return false
 }
 
 func appendPasswordToken(streamURL, password string) string {

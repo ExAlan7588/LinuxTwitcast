@@ -718,20 +718,24 @@ func (s *Server) buildDiagnostics(settings Settings, status service.Status, ffmp
 	if status.Running && status.ScheduledJobs == 0 {
 		add("warn", "The recorder is running, but no schedules are currently active.")
 	}
-for _, warning := range status.Warnings {
-	switch warning.Code {
-	case "stream_password_required":
-		message := fmt.Sprintf("Streamer [%s] is currently locked by a TwitCasting password. Recording stays paused until you fill in the password field in General & Streamer Settings.", warning.Streamer)
-		if !warning.RetryAt.IsZero() {
-			message += fmt.Sprintf(" Next automatic check: %s.", warning.RetryAt.Local().Format("2006-01-02 15:04:05"))
-		}
-		add("warn", message)
+	for _, warning := range status.Warnings {
+		switch warning.Code {
+		case "stream_password_required":
+			message := fmt.Sprintf("Streamer [%s] is currently locked by a TwitCasting password. Recording stays paused until you fill in the password field in General & Streamer Settings.", warning.Streamer)
+			if !warning.RetryAt.IsZero() {
+				message += fmt.Sprintf(" Next automatic check: %s.", warning.RetryAt.Local().Format("2006-01-02 15:04:05"))
+			}
+			add("warn", message)
 
-	case "streamer_id_invalid":
-		message := fmt.Sprintf("Streamer [%s] 的 ID已失效。請到 General & Streamer Settings 檢查並更新 screen-id。", warning.Streamer)
-		add("warn", message)
+		case "streamer_id_invalid":
+			message := fmt.Sprintf("Streamer [%s] 的 ID已失效。請到 General & Streamer Settings 檢查並更新 screen-id。", warning.Streamer)
+			add("warn", message)
+
+		case "stream_member_only":
+			message := fmt.Sprintf("Streamer [%s] 目前是會員限定直播。Discord 仍會通知，但系統不會嘗試錄製，因此不會顯示在進行中的錄影列表。", warning.Streamer)
+			add("info", message)
+		}
 	}
-}
 	add("info", "Ubuntu 24.04 LTS is the current Ubuntu 24 LTS release. If you meant Ubuntu 24.02, use 24.04 instead.")
 
 	return diagnostics
