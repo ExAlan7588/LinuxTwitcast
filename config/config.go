@@ -20,11 +20,18 @@ type StreamerConfig struct {
 	Enabled  bool   `json:"enabled"`
 }
 
+// TwitCastingAPIConfig stores optional official API credentials used for profile lookups.
+type TwitCastingAPIConfig struct {
+	ClientID     string `json:"client_id,omitempty"`
+	ClientSecret string `json:"client_secret,omitempty"`
+}
+
 // AppConfig stores both recorder settings and lightweight UI preferences.
 type AppConfig struct {
-	Lang      string            `json:"lang,omitempty"`
-	Streamers []*StreamerConfig `json:"streamers"`
-	EnableLog bool              `json:"enable_log"`
+	Lang           string               `json:"lang,omitempty"`
+	Streamers      []*StreamerConfig    `json:"streamers"`
+	EnableLog      bool                 `json:"enable_log"`
+	TwitCastingAPI TwitCastingAPIConfig `json:"twitcasting_api,omitempty"`
 }
 
 func Default() *AppConfig {
@@ -91,6 +98,15 @@ func Validate(cfg *AppConfig) error {
 		return errors.New("config is required")
 	}
 
+	clientID := strings.TrimSpace(cfg.TwitCastingAPI.ClientID)
+	clientSecret := strings.TrimSpace(cfg.TwitCastingAPI.ClientSecret)
+	if clientID != "" && clientSecret == "" {
+		return errors.New("twitcasting_api.client_secret is required when twitcasting_api.client_id is set")
+	}
+	if clientSecret != "" && clientID == "" {
+		return errors.New("twitcasting_api.client_id is required when twitcasting_api.client_secret is set")
+	}
+
 	for idx, streamer := range cfg.Streamers {
 		if streamer == nil {
 			return fmt.Errorf("streamers[%d] is required", idx)
@@ -129,6 +145,10 @@ func normalize(cfg *AppConfig) *AppConfig {
 		Lang:      strings.TrimSpace(cfg.Lang),
 		Streamers: make([]*StreamerConfig, 0, len(cfg.Streamers)),
 		EnableLog: cfg.EnableLog,
+		TwitCastingAPI: TwitCastingAPIConfig{
+			ClientID:     strings.TrimSpace(cfg.TwitCastingAPI.ClientID),
+			ClientSecret: strings.TrimSpace(cfg.TwitCastingAPI.ClientSecret),
+		},
 	}
 	if normalized.Lang == "" {
 		normalized.Lang = "EN"

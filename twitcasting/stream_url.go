@@ -2,6 +2,7 @@ package twitcasting
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -11,20 +12,28 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/jsonq"
 
+	"github.com/jzhang046/croned-twitcasting-recorder/config"
 	"github.com/jzhang046/croned-twitcasting-recorder/record"
 )
 
 const (
-	baseDomain     = "https://twitcasting.tv"
-	apiEndpoint    = baseDomain + "/streamserver.php"
-	requestTimeout = 4 * time.Second
-	userAgent      = "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
+	baseDomain                 = "https://twitcasting.tv"
+	apiEndpoint                = baseDomain + "/streamserver.php"
+	apiV2BaseURL               = "https://apiv2.twitcasting.tv"
+	apiV2Version               = "2.0"
+	requestTimeout             = 4 * time.Second
+	profileAPICacheTTL         = 30 * time.Second
+	userAgent                  = "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
+	twitCastingClientIDEnv     = "TWITCASTING_CLIENT_ID"
+	twitCastingClientSecretEnv = "TWITCASTING_CLIENT_SECRET"
 )
 
 var httpClient = &http.Client{
@@ -36,6 +45,11 @@ var (
 	ErrPasswordRequired = errors.New("live stream requires a password")
 	ErrStreamerNotFound = errors.New("streamer screen-id was not found")
 	ErrMemberOnlyLive   = errors.New("live stream is members-only")
+)
+
+var (
+	twitterProfileSizeSuffixRegex = regexp.MustCompile(`_(normal|bigger|mini)(\.[A-Za-z0-9]+)$`)
+	genericSmallImageSuffixRegex  = regexp.MustCompile(`-s(\.[A-Za-z0-9]+)$`)
 )
 
 type streamLookupError struct {
@@ -86,6 +100,28 @@ type StreamerProfile struct {
 	Title            string
 	AvatarURL        string
 	PasswordRequired bool
+}
+
+type twitCastingProfileAPICredentials struct {
+	ClientID     string
+	ClientSecret string
+}
+
+type twitCastingUserResponse struct {
+	User twitCastingUser `json:"user"`
+}
+
+type twitCastingUser struct {
+	ID       string `json:"id"`
+	ScreenID string `json:"screen_id"`
+	Name     string `json:"name"`
+	Image    string `json:"image"`
+}
+
+var profileAPICache struct {
+	mu       sync.RWMutex
+	loadedAt time.Time
+	creds    twitCastingProfileAPICredentials
 }
 
 func GetWSStreamUrl(streamer string) (record.StreamLookupResult, error) {
@@ -159,14 +195,14 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 	}
 
 	// Try to get URL directly
-	if streamUrl, err := getDirectStreamUrl(jq); err == nil {
-		result.StreamURL = appendPasswordToken(streamUrl, password)
+	if streamURL, err := getDirectStreamURL(jq); err == nil {
+		result.StreamURL = appendPasswordToken(streamURL, password)
 		return result, nil
 	}
 
 	log.Printf("Direct Stream URL for streamer [%s] not available in the API response; fallback to default URL\n", streamer)
-	fallbackUrl, fallbackErr := fallbackStreamUrl(jq)
-	result.StreamURL = appendPasswordToken(fallbackUrl, password)
+	fallbackURL, fallbackErr := fallbackStreamURL(jq)
+	result.StreamURL = appendPasswordToken(fallbackURL, password)
 	return result, fallbackErr
 }
 
@@ -180,22 +216,22 @@ func checkStreamOnline(jq *jsonq.JsonQuery) error {
 	return nil
 }
 
-func getDirectStreamUrl(jq *jsonq.JsonQuery) (string, error) {
+func getDirectStreamURL(jq *jsonq.JsonQuery) (string, error) {
 	// Try to get URL directly
-	if streamUrl, err := jq.String("llfmp4", "streams", "main"); err == nil {
-		return streamUrl, nil
+	if streamURL, err := jq.String("llfmp4", "streams", "main"); err == nil {
+		return streamURL, nil
 	}
-	if streamUrl, err := jq.String("llfmp4", "streams", "mobilesource"); err == nil {
-		return streamUrl, nil
+	if streamURL, err := jq.String("llfmp4", "streams", "mobilesource"); err == nil {
+		return streamURL, nil
 	}
-	if streamUrl, err := jq.String("llfmp4", "streams", "base"); err == nil {
-		return streamUrl, nil
+	if streamURL, err := jq.String("llfmp4", "streams", "base"); err == nil {
+		return streamURL, nil
 	}
 
 	return "", fmt.Errorf("direct stream URL not available")
 }
 
-func fallbackStreamUrl(jq *jsonq.JsonQuery) (string, error) {
+func fallbackStreamURL(jq *jsonq.JsonQuery) (string, error) {
 	mode := "base" // default mode
 	if isSource, err := jq.Bool("fmp4", "source"); err == nil && isSource {
 		mode = "main"
@@ -213,12 +249,12 @@ func fallbackStreamUrl(jq *jsonq.JsonQuery) (string, error) {
 		return "", fmt.Errorf("failed parsing stream host: %w", err)
 	}
 
-	movieId, err := jq.String("movie", "id")
+	movieID, err := jq.String("movie", "id")
 	if err != nil {
 		return "", fmt.Errorf("failed parsing movie ID: %w", err)
 	}
 
-	return fmt.Sprintf("%s:%s/ws.app/stream/%s/fmp4/bd/1/1500?mode=%s", protocol, host, movieId, mode), nil
+	return fmt.Sprintf("%s:%s/ws.app/stream/%s/fmp4/bd/1/1500?mode=%s", protocol, host, movieID, mode), nil
 }
 
 func sanitizeFilename(name string) string {
@@ -264,7 +300,12 @@ func fetchStreamInfoWithStatus(streamer string) (streamPageInfo, int, error) {
 	if err != nil {
 		return streamPageInfo{streamerName: streamer}, resp.StatusCode, err
 	}
-	return parseStreamPageInfo(streamer, string(bodyBytes)), resp.StatusCode, nil
+
+	info := parseStreamPageInfo(streamer, string(bodyBytes))
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		enrichStreamInfoFromUserAPI(streamer, &info)
+	}
+	return info, resp.StatusCode, nil
 }
 
 func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
@@ -389,15 +430,147 @@ func extractMetaContent(body, attr, name string) string {
 
 func normalizeImageURL(raw string) string {
 	candidate := strings.TrimSpace(html.UnescapeString(raw))
+	if candidate == "" {
+		return ""
+	}
+
 	lower := strings.ToLower(candidate)
 	switch {
 	case strings.HasPrefix(candidate, "//"):
-		return "https:" + candidate
+		candidate = "https:" + candidate
 	case strings.HasPrefix(lower, "http://"):
-		return "https://" + candidate[len("http://"):]
-	default:
-		return candidate
+		candidate = "https://" + candidate[len("http://"):]
 	}
+
+	return upgradeImageURL(candidate)
+}
+
+func upgradeImageURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+
+	if strings.Contains(parsed.Path, "/image3s/") {
+		parsed.Path = strings.Replace(parsed.Path, "/image3s/", "/image3/", 1)
+	}
+	parsed.Path = twitterProfileSizeSuffixRegex.ReplaceAllString(parsed.Path, `$2`)
+	parsed.Path = genericSmallImageSuffixRegex.ReplaceAllString(parsed.Path, `$1`)
+	return parsed.String()
+}
+
+func enrichStreamInfoFromUserAPI(streamer string, info *streamPageInfo) {
+	if info == nil {
+		return
+	}
+
+	user, err := fetchUserProfileFromAPI(streamer)
+	if err != nil {
+		return
+	}
+
+	if name := strings.TrimSpace(user.Name); name != "" {
+		info.streamerName = sanitizeFilename(name)
+	}
+	if avatarURL := normalizeImageURL(user.Image); avatarURL != "" {
+		info.avatarURL = avatarURL
+	}
+}
+
+func fetchUserProfileFromAPI(streamer string) (twitCastingUser, error) {
+	creds := currentProfileAPICredentials()
+	if !creds.IsComplete() {
+		return twitCastingUser{}, errors.New("TwitCasting API credentials are not configured")
+	}
+
+	endpoint := fmt.Sprintf("%s/users/%s", apiV2BaseURL, url.PathEscape(strings.TrimSpace(streamer)))
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return twitCastingUser{}, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", creds.BasicAuthHeader())
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("X-Api-Version", apiV2Version)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return twitCastingUser{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return twitCastingUser{}, ErrStreamerNotFound
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return twitCastingUser{}, fmt.Errorf("TwitCasting API request failed: status %d", resp.StatusCode)
+	}
+
+	var payload twitCastingUserResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return twitCastingUser{}, err
+	}
+	if strings.TrimSpace(payload.User.ScreenID) == "" &&
+		strings.TrimSpace(payload.User.Name) == "" &&
+		strings.TrimSpace(payload.User.Image) == "" {
+		return twitCastingUser{}, errors.New("TwitCasting API response did not include user data")
+	}
+	return payload.User, nil
+}
+
+func (c twitCastingProfileAPICredentials) IsComplete() bool {
+	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != ""
+}
+
+func (c twitCastingProfileAPICredentials) BasicAuthHeader() string {
+	token := base64.StdEncoding.EncodeToString([]byte(strings.TrimSpace(c.ClientID) + ":" + strings.TrimSpace(c.ClientSecret)))
+	return "Basic " + token
+}
+
+func currentProfileAPICredentials() twitCastingProfileAPICredentials {
+	if creds := profileAPICredentialsFromEnv(); creds.IsComplete() {
+		return creds
+	}
+
+	profileAPICache.mu.RLock()
+	if time.Since(profileAPICache.loadedAt) < profileAPICacheTTL {
+		cached := profileAPICache.creds
+		profileAPICache.mu.RUnlock()
+		return cached
+	}
+	profileAPICache.mu.RUnlock()
+
+	profileAPICache.mu.Lock()
+	defer profileAPICache.mu.Unlock()
+	if time.Since(profileAPICache.loadedAt) < profileAPICacheTTL {
+		return profileAPICache.creds
+	}
+
+	loaded := twitCastingProfileAPICredentials{}
+	cfg, err := config.LoadDefault()
+	if err == nil && cfg != nil {
+		loaded = twitCastingProfileAPICredentials{
+			ClientID:     strings.TrimSpace(cfg.TwitCastingAPI.ClientID),
+			ClientSecret: strings.TrimSpace(cfg.TwitCastingAPI.ClientSecret),
+		}
+	}
+	profileAPICache.loadedAt = time.Now()
+	profileAPICache.creds = loaded
+	return loaded
+}
+
+func profileAPICredentialsFromEnv() twitCastingProfileAPICredentials {
+	return twitCastingProfileAPICredentials{
+		ClientID:     strings.TrimSpace(os.Getenv(twitCastingClientIDEnv)),
+		ClientSecret: strings.TrimSpace(os.Getenv(twitCastingClientSecretEnv)),
+	}
+}
+
+func InvalidateProfileAPICache() {
+	profileAPICache.mu.Lock()
+	defer profileAPICache.mu.Unlock()
+	profileAPICache.loadedAt = time.Time{}
+	profileAPICache.creds = twitCastingProfileAPICredentials{}
 }
 
 // 锁页会显示专门的空状态和 password 表单；先在这里拦下，避免无密码时反复尝试启动录影。

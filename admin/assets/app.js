@@ -74,6 +74,10 @@ const I18N = {
         "settings.langEnglish": "English",
         "settings.langChinese": "Traditional Chinese",
         "settings.mirrorLogs": "Mirror logs to `app.log`",
+        "settings.twitcastingApiSection": "TwitCasting API (optional)",
+        "twitcasting.clientId": "Client ID",
+        "twitcasting.clientSecret": "Client Secret",
+        "twitcasting.help": "Use an official TwitCasting Client ID / Client Secret for more reliable profile lookups and higher-quality avatar URLs.",
         "table.enabled": "Enabled",
         "table.screenId": "Screen ID",
         "table.schedule": "Interval",
@@ -229,6 +233,10 @@ const I18N = {
         "settings.langEnglish": "英文",
         "settings.langChinese": "繁體中文",
         "settings.mirrorLogs": "同步寫入 `app.log`",
+        "settings.twitcastingApiSection": "TwitCasting API（選填）",
+        "twitcasting.clientId": "Client ID",
+        "twitcasting.clientSecret": "Client Secret",
+        "twitcasting.help": "填入官方 TwitCasting Client ID / Client Secret 後，直播主資料查詢會更穩定，大頭貼網址也會盡量升級成較高畫質。",
         "table.enabled": "啟用",
         "table.screenId": "Screen ID",
         "table.schedule": "秒數",
@@ -373,6 +381,8 @@ function cacheElements() {
 
     ui.langInput = document.getElementById("langInput");
     ui.enableLogInput = document.getElementById("enableLogInput");
+    ui.twitcastingClientIdInput = document.getElementById("twitcastingClientIdInput");
+    ui.twitcastingClientSecretInput = document.getElementById("twitcastingClientSecretInput");
     ui.streamersBody = document.getElementById("streamersBody");
     ui.streamerGuideBtn = document.getElementById("streamerGuideBtn");
     ui.streamerModal = document.getElementById("streamerModal");
@@ -749,6 +759,8 @@ function renderSettings(settings) {
     ui.langInput.value = settings.app?.lang || "EN";
     applyLanguage(ui.langInput.value);
     ui.enableLogInput.checked = Boolean(settings.app?.enable_log);
+    ui.twitcastingClientIdInput.value = settings.app?.twitcasting_api?.client_id || "";
+    ui.twitcastingClientSecretInput.value = settings.app?.twitcasting_api?.client_secret || "";
     renderStreamers(appState.streamers);
 
     ui.discordEnabledInput.checked = Boolean(settings.discord?.enabled);
@@ -1221,6 +1233,10 @@ function collectAppSettings() {
     return {
         lang: ui.langInput.value,
         enable_log: ui.enableLogInput.checked,
+        twitcasting_api: {
+            client_id: ui.twitcastingClientIdInput.value.trim(),
+            client_secret: ui.twitcastingClientSecretInput.value.trim()
+        },
         streamers
     };
 }

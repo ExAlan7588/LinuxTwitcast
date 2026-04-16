@@ -14,6 +14,7 @@ import (
 	"github.com/jzhang046/croned-twitcasting-recorder/config"
 	"github.com/jzhang046/croned-twitcasting-recorder/discord"
 	"github.com/jzhang046/croned-twitcasting-recorder/telegram"
+	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
 )
 
 type Settings struct {
@@ -48,6 +49,7 @@ func SaveSettings(settings Settings) error {
 	if err := config.SaveDefault(&settings.App); err != nil {
 		return err
 	}
+	twitcasting.InvalidateProfileAPICache()
 	if err := discord.SaveConfig(settings.Discord); err != nil {
 		return err
 	}
