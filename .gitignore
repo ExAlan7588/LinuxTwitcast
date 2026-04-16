@@ -1,31 +1,83 @@
-bin/
-*.ts
+# =========================
+# Secrets / local config
+# =========================
+*.env
+.env
+.env.*
+*.local
 config.yaml
+config.yml
+config.json
 discord.json
 telegram.json
+
+# state / runtime data
+state.json
+/state.json
+
+# =========================
+# Logs
+# =========================
+*.log
 app.log
+web.log
+/web.log
+gcm-diagnose.log
+
+# =========================
+# Build outputs / binaries
+# =========================
+bin/
+twitcast_bot
+*.exe
+*.out
+*.test
+
+# =========================
+# Go cache / temp
+# =========================
 .gocache/
 .gomodcache/
-twitcast_bot
-/state.json
-/web.log
-/run-twitcast-bot.sh
+coverage.out
+*.go.[0-9]*
+
+# =========================
+# Python
+# =========================
 .venv/
+venv/
 __pycache__/
 *.pyc
-*.go.[0-9]*
+
+# =========================
+# Node / frontend
+# =========================
+node_modules/
+dist/
+
+# =========================
+# Runtime scripts / local helpers
+# =========================
+run-twitcast-bot.sh
+/run-twitcast-bot.sh
+
+# =========================
+# App data / recordings
+# =========================
 Recordings/
+recordings/
+
+# =========================
+# Temp / tooling
+# =========================
 .codex-turbo-src/
 codex-turbo-install-staging/
 codex-turbo-install-staging-home/
 codex-turbo-src/
-config.json
-gcm-diagnose.log
 
-
-# macOS 
+# =========================
+# OS / editor
+# =========================
 .DS_Store
-._.DS_Store 
-
-# vim 
+._.DS_Store
 *.swp
