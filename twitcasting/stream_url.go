@@ -453,7 +453,7 @@ func extractMetaContent(body, attr, name string) string {
 	case attr == "name" && name == "twitter:image":
 		patterns = twitterImageMetaRegexes
 	default:
-		patterns = compileMetaContentRegexes(attr, name)
+		return ""
 	}
 
 	for _, pattern := range patterns {
