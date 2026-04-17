@@ -20,6 +20,24 @@ const (
 	twitcastIcon   = "https://ja.twitcasting.tv/img/icon192.png"
 )
 
+var discordTitleSanitizer = strings.NewReplacer(
+	"/", "／",
+	"\\", "＼",
+	"|", "｜",
+	"!", "！",
+	"?", "？",
+	"*", "＊",
+	":", "：",
+	"<", "＜",
+	">", "＞",
+	"\"", "＂",
+	"#", "＃",
+	"@", "＠",
+	"&", "＆",
+	"%", "％",
+	"$", "＄",
+)
+
 // Notifier handles Discord notifications for a single recording session.
 type Notifier struct {
 	botToken         string
@@ -65,24 +83,7 @@ func NewNotifierFromConfig(cfg Config, screenID string) *Notifier {
 // sanitizeForTitle converts special ASCII characters to full-width equivalents
 // so they display cleanly in Discord embed titles.
 func sanitizeForTitle(s string) string {
-	replacer := strings.NewReplacer(
-		"/", "／",
-		"\\", "＼",
-		"|", "｜",
-		"!", "！",
-		"?", "？",
-		"*", "＊",
-		":", "：",
-		"<", "＜",
-		">", "＞",
-		"\"", "＂",
-		"#", "＃",
-		"@", "＠",
-		"&", "＆",
-		"%", "％",
-		"$", "＄",
-	)
-	return replacer.Replace(s)
+	return discordTitleSanitizer.Replace(s)
 }
 
 // FormatTitle returns an embed title in the format [直播主][yyyy-mm-dd]標題.

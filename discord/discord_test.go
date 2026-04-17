@@ -61,3 +61,13 @@ func TestBuildEndEmbedAddsTelegramArchiveLink(t *testing.T) {
 		t.Fatalf("expected telegram link in archive field, got %q", lastField.Value)
 	}
 }
+
+func TestFormatTitleSanitizesReservedCharacters(t *testing.T) {
+	formatted := FormatTitle(`主/播`, `標題? #1`)
+	if strings.Contains(formatted, "/") || strings.Contains(formatted, "?") || strings.Contains(formatted, "#") {
+		t.Fatalf("expected reserved ASCII punctuation to be sanitized, got %q", formatted)
+	}
+	if !strings.Contains(formatted, "主／播") || !strings.Contains(formatted, "標題？ ＃1") {
+		t.Fatalf("unexpected sanitized title output: %q", formatted)
+	}
+}

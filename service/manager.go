@@ -65,6 +65,7 @@ type Manager struct {
 	active           map[string]record.SessionInfo
 	warnings         map[string]streamWarning
 	memberOnly       map[string]memberOnlyNotification
+	discordCfg       discord.Config
 	lastError        string
 }
 
@@ -94,11 +95,8 @@ func (m *Manager) Start() error {
 		m.storeError(err)
 		return err
 	}
-	if err := config.Validate(cfg); err != nil {
-		m.storeError(err)
-		return err
-	}
-	if config.EnabledStreamers(cfg) == 0 {
+	enabledStreamers := config.EnabledStreamers(cfg)
+	if enabledStreamers == 0 {
 		err := errors.New("no enabled streamers configured")
 		m.storeError(err)
 		return err
@@ -200,11 +198,12 @@ func (m *Manager) Start() error {
 	m.cron = scheduler
 	m.startedAt = time.Now()
 	m.totalStreamers = len(cfg.Streamers)
-	m.enabledStreamers = config.EnabledStreamers(cfg)
+	m.enabledStreamers = enabledStreamers
 	m.scheduledJobs = scheduledJobs
 	m.active = make(map[string]record.SessionInfo)
 	m.warnings = make(map[string]streamWarning)
 	m.memberOnly = make(map[string]memberOnlyNotification)
+	m.discordCfg = discordCfg
 	m.lastError = ""
 	m.mu.Unlock()
 
@@ -270,6 +269,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.active = make(map[string]record.SessionInfo)
 	m.warnings = make(map[string]streamWarning)
 	m.memberOnly = make(map[string]memberOnlyNotification)
+	m.discordCfg = discord.Config{}
 	if err != nil {
 		m.lastError = err.Error()
 	}
@@ -367,10 +367,12 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 	var shouldNotifyInvalid bool
 	var startMemberOnly *memberOnlyNotification
 	var endMemberOnly *memberOnlyNotification
+	var discordCfg discord.Config
 
 	lookup, _ := twitcasting.LookupResultFromError(err)
 
 	m.mu.Lock()
+	discordCfg = m.discordCfg
 	if existing, ok := m.memberOnly[streamer]; ok && !errors.Is(err, twitcasting.ErrMemberOnlyLive) {
 		delete(m.memberOnly, streamer)
 		copy := existing
@@ -403,7 +405,7 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 					CoverURL:     lookup.CoverURL,
 					StartedAt:    time.Now(),
 				},
-				notifier: discord.NewNotifierFromConfig(discord.LoadConfig(), streamer),
+				notifier: discord.NewNotifierFromConfig(discordCfg, streamer),
 			}
 			m.memberOnly[streamer] = entry
 			copy := entry
@@ -429,6 +431,6 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 		go endMemberOnly.notifier.NotifyMemberOnlyEnd(endMemberOnly.session)
 	}
 	if shouldNotifyInvalid {
-		go discord.SendInvalidStreamerIDAlert(discord.LoadConfig(), streamer)
+		go discord.SendInvalidStreamerIDAlert(discordCfg, streamer)
 	}
 }

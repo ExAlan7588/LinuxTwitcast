@@ -50,6 +50,44 @@ var (
 var (
 	twitterProfileSizeSuffixRegex = regexp.MustCompile(`_(normal|bigger|mini)(\.[A-Za-z0-9]+)$`)
 	genericSmallImageSuffixRegex  = regexp.MustCompile(`-s(\.[A-Za-z0-9]+)$`)
+	titleTagRegex                 = regexp.MustCompile(`(?is)<title>(.*?)</title>`)
+	authorMetaRegex               = regexp.MustCompile(`(?is)<meta\s+name="author"\s+content="([^"]+)"`)
+	twitterTitleMetaRegex         = regexp.MustCompile(`(?is)<meta\s+name="twitter:title"\s+content="([^"]*)"`)
+	avatarURLRegexes              = []*regexp.Regexp{
+		regexp.MustCompile(`(?is)\bdata-broadcaster-profile-image=["']([^"'<>]+)["']`),
+		regexp.MustCompile(`(?is)<img[^>]+\bclass=["'][^"']*\bauthorthumbnail\b[^"']*["'][^>]+\bsrc=["']([^"'<>]+)["']`),
+		regexp.MustCompile(`(?is)<img[^>]+\bsrc=["']([^"'<>]+)["'][^>]+\bclass=["'][^"']*\bauthorthumbnail\b[^"']*["']`),
+		regexp.MustCompile(`(?is)<div[^>]+\bclass=["'][^"']*\btw-user-nav2-icon\b[^"']*["'][^>]*>\s*<img[^>]+\bsrc=["']([^"'<>]+)["']`),
+		regexp.MustCompile(`(?is)<img[^>]+\bclass=["'][^"']*\btw-unit-own-member-icon\b[^"']*["'][^>]+\bsrc=["']([^"'<>]+)["']`),
+	}
+	ogImageMetaRegexes      = compileMetaContentRegexes("property", "og:image")
+	twitterImageMetaRegexes = compileMetaContentRegexes("name", "twitter:image")
+	filenameSanitizer       = strings.NewReplacer(
+		"\\", "＼",
+		"/", "／",
+		":", "：",
+		"*", "＊",
+		"?", "？",
+		"\"", "”",
+		"<", "＜",
+		">", "＞",
+		"|", "｜",
+	)
+	membershipMarkers = []string{
+		"members-only stream",
+		"member-only stream",
+		"members only stream",
+		"member only stream",
+		"members-only",
+		"メンバーシップ限定配信",
+		"メンバー限定配信",
+		"會員限定直播",
+		"会员限定直播",
+		"會員限定配信",
+		"会员限定配信",
+		"membershipjoinplans.php?u=",
+		"membershipjoindetail.php?u=",
+	}
 )
 
 type streamLookupError struct {
@@ -260,21 +298,7 @@ func fallbackStreamURL(jq *jsonq.JsonQuery) (string, error) {
 }
 
 func sanitizeFilename(name string) string {
-	replacements := map[string]string{
-		"\\": "＼",
-		"/":  "／",
-		":":  "：",
-		"*":  "＊",
-		"?":  "？",
-		"\"": "”",
-		"<":  "＜",
-		">":  "＞",
-		"|":  "｜",
-	}
-	for old, new := range replacements {
-		name = strings.ReplaceAll(name, old, new)
-	}
-	return name
+	return filenameSanitizer.Replace(name)
 }
 
 func fetchStreamInfo(streamer string) streamPageInfo {
@@ -321,26 +345,18 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 	// --- Extract streamer display name ---
 	// TwitCasting <title> when live: "STREAM_TITLE - NAME (@screen-id) - Twitcast"
 	// TwitCasting <title> when offline: "NAME (@screen-id) 's Live - Twitcast"
-	titleTagRegex := regexp.MustCompile(`<title>(.*?)</title>`)
 	titleMatches := titleTagRegex.FindStringSubmatch(bodyStr)
 	if len(titleMatches) > 1 {
 		rawTitle := titleMatches[1]
-		liveTitleRegex := regexp.MustCompile(`(?is)^(.*?)\s+-\s+(.+?)\s*\(@` + regexp.QuoteMeta(streamer) + `\)`)
-		if liveMatch := liveTitleRegex.FindStringSubmatch(rawTitle); len(liveMatch) > 2 {
-			info.title = strings.TrimSpace(liveMatch[1])
-			info.streamerName = strings.TrimSpace(liveMatch[2])
-		} else {
-			offlineNameRegex := regexp.MustCompile(`(?is)^(.+?)\s*\(@` + regexp.QuoteMeta(streamer) + `\)`)
-			if nameMatch := offlineNameRegex.FindStringSubmatch(rawTitle); len(nameMatch) > 1 {
-				info.streamerName = strings.TrimSpace(nameMatch[1])
-			}
+		if title, streamerName := parseTitleTag(streamer, rawTitle); streamerName != "" {
+			info.streamerName = streamerName
+			info.title = title
 		}
 	}
 
 	// Fallback: try <meta name="author"> for streamer name
 	if info.streamerName == streamer {
-		authorRegex := regexp.MustCompile(`<meta\s+name="author"\s+content="([^"]+)"`)
-		authorMatch := authorRegex.FindStringSubmatch(bodyStr)
+		authorMatch := authorMetaRegex.FindStringSubmatch(bodyStr)
 		if len(authorMatch) > 1 {
 			candidate := strings.TrimSpace(authorMatch[1])
 			if candidate != "" && !strings.EqualFold(candidate, "twitcasting") {
@@ -352,8 +368,7 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 	// --- Extract stream title ---
 	// Only use twitter:title as a fallback.
 	// If we already got a title earlier, do not overwrite it.
-	twitterTitleRegex := regexp.MustCompile(`<meta\s+name="twitter:title"\s+content="([^"]*)"`)
-	twitterTitleMatch := twitterTitleRegex.FindStringSubmatch(bodyStr)
+	twitterTitleMatch := twitterTitleMetaRegex.FindStringSubmatch(bodyStr)
 	if len(twitterTitleMatch) > 1 {
 		candidate := strings.TrimSpace(twitterTitleMatch[1])
 		if info.title == "" &&
@@ -388,15 +403,26 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 	return info
 }
 
+func parseTitleTag(streamer, rawTitle string) (string, string) {
+	marker := "(@" + streamer + ")"
+	idx := strings.Index(rawTitle, marker)
+	if idx < 0 {
+		return "", ""
+	}
+
+	prefix := strings.TrimSpace(rawTitle[:idx])
+	if prefix == "" {
+		return "", ""
+	}
+	if separator := strings.Index(prefix, " - "); separator >= 0 {
+		return strings.TrimSpace(prefix[:separator]), strings.TrimSpace(prefix[separator+3:])
+	}
+	return "", prefix
+}
+
 func extractAvatarURL(body string) string {
-	for _, pattern := range []string{
-		`(?is)\bdata-broadcaster-profile-image=["']([^"'<>]+)["']`,
-		`(?is)<img[^>]+\bclass=["'][^"']*\bauthorthumbnail\b[^"']*["'][^>]+\bsrc=["']([^"'<>]+)["']`,
-		`(?is)<img[^>]+\bsrc=["']([^"'<>]+)["'][^>]+\bclass=["'][^"']*\bauthorthumbnail\b[^"']*["']`,
-		`(?is)<div[^>]+\bclass=["'][^"']*\btw-user-nav2-icon\b[^"']*["'][^>]*>\s*<img[^>]+\bsrc=["']([^"'<>]+)["']`,
-		`(?is)<img[^>]+\bclass=["'][^"']*\btw-unit-own-member-icon\b[^"']*["'][^>]+\bsrc=["']([^"'<>]+)["']`,
-	} {
-		match := regexp.MustCompile(pattern).FindStringSubmatch(body)
+	for _, pattern := range avatarURLRegexes {
+		match := pattern.FindStringSubmatch(body)
 		if len(match) > 1 {
 			return normalizeImageURL(match[1])
 		}
@@ -420,18 +446,31 @@ func extractCoverURL(body string) string {
 }
 
 func extractMetaContent(body, attr, name string) string {
-	quotedName := regexp.QuoteMeta(name)
-	patterns := []string{
-		fmt.Sprintf(`(?is)<meta[^>]+\b%s=["']%s["'][^>]+\bcontent=["']([^"'<>]+)["']`, attr, quotedName),
-		fmt.Sprintf(`(?is)<meta[^>]+\bcontent=["']([^"'<>]+)["'][^>]+\b%s=["']%s["']`, attr, quotedName),
+	var patterns []*regexp.Regexp
+	switch {
+	case attr == "property" && name == "og:image":
+		patterns = ogImageMetaRegexes
+	case attr == "name" && name == "twitter:image":
+		patterns = twitterImageMetaRegexes
+	default:
+		patterns = compileMetaContentRegexes(attr, name)
 	}
+
 	for _, pattern := range patterns {
-		match := regexp.MustCompile(pattern).FindStringSubmatch(body)
+		match := pattern.FindStringSubmatch(body)
 		if len(match) > 1 {
 			return strings.TrimSpace(html.UnescapeString(match[1]))
 		}
 	}
 	return ""
+}
+
+func compileMetaContentRegexes(attr, name string) []*regexp.Regexp {
+	quotedName := regexp.QuoteMeta(name)
+	return []*regexp.Regexp{
+		regexp.MustCompile(fmt.Sprintf(`(?is)<meta[^>]+\b%s=["']%s["'][^>]+\bcontent=["']([^"'<>]+)["']`, attr, quotedName)),
+		regexp.MustCompile(fmt.Sprintf(`(?is)<meta[^>]+\bcontent=["']([^"'<>]+)["'][^>]+\b%s=["']%s["']`, attr, quotedName)),
+	}
 }
 
 func normalizeImageURL(raw string) string {
@@ -593,23 +632,8 @@ func requiresMembershipAccess(body string) bool {
 		return false
 	}
 
-	markers := []string{
-		"members-only stream",
-		"member-only stream",
-		"members only stream",
-		"member only stream",
-		"members-only",
-		"メンバーシップ限定配信",
-		"メンバー限定配信",
-		"會員限定直播",
-		"会员限定直播",
-		"會員限定配信",
-		"会员限定配信",
-		"membershipjoinplans.php?u=",
-		"membershipjoindetail.php?u=",
-	}
-	for _, marker := range markers {
-		if strings.Contains(lower, strings.ToLower(marker)) {
+	for _, marker := range membershipMarkers {
+		if strings.Contains(lower, marker) {
 			return true
 		}
 	}

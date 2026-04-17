@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 )
@@ -39,14 +38,6 @@ func Default() *AppConfig {
 		Lang:      "EN",
 		Streamers: []*StreamerConfig{},
 	}
-}
-
-func GetDefaultConfig() *AppConfig {
-	cfg, err := LoadDefault()
-	if err != nil {
-		log.Fatal("Error parsing config file:\n", err)
-	}
-	return cfg
 }
 
 func LoadDefault() (*AppConfig, error) {

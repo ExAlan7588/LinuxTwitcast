@@ -90,6 +90,14 @@ func TestParseStreamPageInfoKeepsCoverWhenAvatarMissing(t *testing.T) {
 	}
 }
 
+func TestSanitizeFilenameReplacesReservedCharacters(t *testing.T) {
+	got := sanitizeFilename(`a/b\c:d*e?f"g<h>i|j`)
+	want := `a／b＼c：d＊e？f”g＜h＞i｜j`
+	if got != want {
+		t.Fatalf("sanitizeFilename() = %q, want %q", got, want)
+	}
+}
+
 func TestLookupStreamerProfileParsesValidPage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/alice" {
