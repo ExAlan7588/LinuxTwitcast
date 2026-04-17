@@ -45,6 +45,9 @@ type Server struct {
 	restartRequested chan<- struct{}
 	httpServer       *http.Server
 	buildInfo        BuildInfo
+	fileRoots        []FileRoot
+	executablePath   string
+	ffmpegPath       string
 }
 
 type RuntimeInfo struct {
@@ -82,11 +85,17 @@ type FileListResponse struct {
 }
 
 func NewServer(options Options, manager *service.Manager, restartRequested chan<- struct{}) *Server {
+	executable, _ := os.Executable()
+	ffmpegPath, _ := exec.LookPath("ffmpeg")
+
 	server := &Server{
 		options:          options,
 		manager:          manager,
 		restartRequested: restartRequested,
 		buildInfo:        LoadBuildInfo(options.RootDir),
+		executablePath:   executable,
+		ffmpegPath:       ffmpegPath,
+		fileRoots:        BuildFileRoots(options.RootDir),
 	}
 
 	mux := http.NewServeMux()
@@ -153,8 +162,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	executable, _ := os.Executable()
-	ffmpegPath, _ := exec.LookPath("ffmpeg")
+	executable := s.executablePath
+	ffmpegPath := s.ffmpegPath
 	status := s.manager.Status()
 
 	s.writeJSON(w, map[string]interface{}{
@@ -170,7 +179,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			ListenAddress:    s.options.Address,
 			AuthEnabled:      s.options.Username != "",
 		},
-		"file_roots":    BuildFileRoots(s.options.RootDir),
+		"file_roots":    s.fileRoots,
 		"diagnostics":   s.buildDiagnostics(settings, status, ffmpegPath),
 		"needs_restart": status.Running,
 	})
@@ -408,7 +417,7 @@ func (s *Server) handleFileRoots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.writeJSON(w, BuildFileRoots(s.options.RootDir))
+	s.writeJSON(w, s.fileRoots)
 }
 
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
@@ -644,7 +653,7 @@ func (s *Server) handleFileTelegramUpload(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, string, string, error) {
-	allowedRoots := BuildFileRoots(s.options.RootDir)
+	allowedRoots := s.fileRoots
 	rootDir := filepath.Clean(strings.TrimSpace(requestedRoot))
 	if rootDir == "" && len(allowedRoots) > 0 {
 		rootDir = filepath.Clean(allowedRoots[0].Root)
@@ -698,7 +707,7 @@ func (s *Server) buildDiagnostics(settings Settings, status service.Status, ffmp
 	if settings.Telegram.Enabled && strings.Contains(strings.TrimSpace(settings.Telegram.ApiEndpoint), "127.0.0.1:8081") {
 		add("warn", "Telegram uploads are pointed at a local Bot API endpoint. Make sure that service also runs on the VPS, or switch back to https://api.telegram.org.")
 	}
-	if isPublicListen(s.options.Address) && s.options.Username == "" {
+	if IsPublicListen(s.options.Address) && s.options.Username == "" {
 		add("error", "The web console is exposed on a non-loopback address without built-in authentication.")
 	}
 	if runtime.GOOS != "linux" {
@@ -814,7 +823,9 @@ func isOfflinePollingLogLine(line string) bool {
 		strings.Contains(line, "live stream is offline")
 }
 
-func isPublicListen(addr string) bool {
+// IsPublicListen checks whether the bind address is publicly reachable and should be treated as a security-sensitive bind target.
+// 解析方式與 web 入口一致：若未指定位址視為公共位址；僅 127.0.0.1 / localhost / ::1 視為私有可直接回收。
+func IsPublicListen(addr string) bool {
 	host := strings.TrimSpace(addr)
 	if parsedHost, _, err := net.SplitHostPort(addr); err == nil {
 		host = parsedHost

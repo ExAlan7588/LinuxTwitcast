@@ -17,6 +17,63 @@ import (
 	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
 )
 
+func TestIsPublicListen(t *testing.T) {
+	testCases := []struct {
+		name string
+		addr string
+		want bool
+	}{
+		{
+			name: "empty host treated as public",
+			addr: "",
+			want: true,
+		},
+		{
+			name: "ipv4 all interface",
+			addr: "0.0.0.0:8080",
+			want: true,
+		},
+		{
+			name: "ipv6 wildcard",
+			addr: "[::]:8080",
+			want: true,
+		},
+		{
+			name: "localhost blocked",
+			addr: "localhost:8080",
+			want: false,
+		},
+		{
+			name: "ipv4 loopback blocked",
+			addr: "127.0.0.1:8080",
+			want: false,
+		},
+		{
+			name: "ipv6 loopback blocked",
+			addr: "[::1]:8080",
+			want: false,
+		},
+		{
+			name: "private ip treated public for safety",
+			addr: "192.168.1.10:8080",
+			want: true,
+		},
+		{
+			name: "malformed address treated as public",
+			addr: "%%%bad%%%",
+			want: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsPublicListen(tc.addr); got != tc.want {
+				t.Fatalf("IsPublicListen(%q) = %v, want %v", tc.addr, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestHandleBotRestartSchedulesRestart(t *testing.T) {
 	restartRequested := make(chan struct{}, 1)
 	server := NewServer(Options{
