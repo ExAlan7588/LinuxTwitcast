@@ -93,6 +93,12 @@
             <div class="subsection">
                 <h3 data-i18n="settings.twitcastingApiSection">TwitCasting API (optional)</h3>
                 <p class="section-note" data-i18n="twitcasting.help">Use an official TwitCasting Client ID / Client Secret for more reliable profile lookups and higher-quality avatar URLs.</p>
+                <p class="field-help helper-note" data-i18n="twitcasting.getCredentials">To get a Client ID / Client Secret, sign in to your TwitCasting account and create a new app from the official Developer Page.</p>
+                <p class="field-help helper-note helper-links">
+                    <a href="https://twitcasting.tv/developer.php" target="_blank" rel="noreferrer noopener" data-i18n="twitcasting.developerPageLink">Open Developer Page</a>
+                    <span aria-hidden="true">·</span>
+                    <a href="https://apiv2-doc.twitcasting.tv/" target="_blank" rel="noreferrer noopener" data-i18n="twitcasting.apiDocsLink">APIv2 Documentation</a>
+                </p>
                 <div class="form-grid">
                     <label>
                         <span data-i18n="twitcasting.clientId">Client ID</span>
@@ -312,203 +318,23 @@
                     <strong data-i18n="table.streamPassword">Live Password</strong>
                     <p data-i18n="streamer.helpPassword">Only fill this if the stream uses a TwitCasting secret word.</p>
                 </div>
+                <div class="guide-item">
+                    <strong data-i18n="settings.twitcastingApiSection">TwitCasting API (optional)</strong>
+                    <p data-i18n="twitcasting.getCredentials">To get a Client ID / Client Secret, sign in to your TwitCasting account and create a new app from the official Developer Page.</p>
+                    <p class="field-help helper-links">
+                        <a href="https://twitcasting.tv/developer.php" target="_blank" rel="noreferrer noopener" data-i18n="twitcasting.developerPageLink">Open Developer Page</a>
+                        <span aria-hidden="true">·</span>
+                        <a href="https://apiv2-doc.twitcasting.tv/" target="_blank" rel="noreferrer noopener" data-i18n="twitcasting.apiDocsLink">APIv2 Documentation</a>
+                    </p>
+                </div>
             </div>
             <p class="muted-text helper-note" data-i18n="streamer.guideSaveNote">After changing the streamer list, click Save Settings on the main page to write it to disk.</p>
         </div>
     </div>
 
     <div id="toast" class="toast" aria-live="polite"></div>
-    <script>
-        (() => {
-            const langKey = "twitcast-ui-lang";
-            const translations = {
-                EN: {
-                    "document.title": "TwitCasting VPS Console",
-                    "hero.eyebrow": "Headless Linux Control Room",
-                    "hero.title": "TwitCasting Recorder Console",
-                    "hero.lede": "Manage recording, notifications, files, and update checks from a single web console designed for Ubuntu VPS deployments.",
-                    "actions.refresh": "Refresh",
-                    "actions.save": "Save Settings",
-                    "actions.startRecorder": "Start Recorder",
-                    "actions.stopRecorder": "Stop Recorder",
-                    "actions.restartRecorder": "Restart Recorder",
-                    "actions.restartBot": "Restart Bot",
-                    "theme.useLight": "Use Light Theme",
-                    "theme.useDark": "Use Dark Theme",
-                    "theme.ariaLight": "Switch to light theme",
-                    "theme.ariaDark": "Switch to dark theme",
-                    "status.section": "Service Status",
-                    "status.activeRecordings": "Active Recordings",
-                    "system.section": "System Info",
-                    "system.checkUpdates": "Check for Updates",
-                    "system.diagnostics": "Diagnostics",
-                    "settings.section": "General & Streamer Settings",
-                    "settings.addStreamer": "Add Streamer",
-                    "settings.addStreamerHint": "Need help? Open the field guide first.",
-                    "settings.streamerGuide": "Field Guide",
-                    "settings.recorderLanguage": "Recorder Language",
-                    "settings.langEnglish": "English",
-                    "settings.langChinese": "Traditional Chinese",
-                    "settings.mirrorLogs": "Mirror logs to `app.log`",
-                    "settings.twitcastingApiSection": "TwitCasting API (optional)",
-                    "twitcasting.clientId": "Client ID",
-                    "twitcasting.clientSecret": "Client Secret",
-                    "twitcasting.help": "Use an official TwitCasting Client ID / Client Secret for more reliable profile lookups and higher-quality avatar URLs.",
-                    "twitcasting.clientIdHelp": "This is the public app ID for TwitCasting's official API. It only helps this console look up streamer profile data, and must be paired with Client Secret.",
-                    "twitcasting.clientSecretHelp": "This is the private key paired with the Client ID. Leave both fields empty if you do not use the official API, and do not share this secret publicly.",
-                    "table.enabled": "Enabled",
-                    "table.screenId": "Screen ID",
-                    "table.schedule": "Interval",
-                    "table.streamPassword": "Live Password",
-                    "table.targetFolder": "Target Folder",
-                    "table.actions": "Actions",
-                    "common.close": "Close",
-                    "common.cancel": "Cancel",
-                    "common.seconds": "seconds",
-                    "streamer.checkButton": "Check Status",
-                    "streamer.enabledLabel": "Enable this streamer",
-                    "streamer.helpScreenId": "Use the TwitCasting ID that appears after twitcasting.tv/ in the channel URL.",
-                    "streamer.helpSchedule": "How often the recorder checks this streamer. Example: 5 means every 5 seconds.",
-                    "streamer.helpFolder": "Recordings for this streamer are saved under the Recordings/ subfolder you choose here.",
-                    "streamer.helpPassword": "Only fill this if the stream uses a TwitCasting secret word.",
-                    "streamer.guideTitle": "How to Fill Streamer Fields",
-                    "streamer.guideSaveNote": "After changing the streamer list, click Save Settings on the main page to write it to disk.",
-                    "discord.section": "Discord Notifications",
-                    "discord.testButton": "Send Test Message",
-                    "discord.enabled": "Enable Discord notifications",
-                    "discord.botToken": "Bot Token",
-                    "discord.guildId": "Guild ID",
-                    "discord.notifyChannel": "Notify Channel ID",
-                    "discord.archiveChannel": "Archive Channel ID",
-                    "discord.tagRole": "Mention the per-streamer role when a stream starts",
-                    "telegram.section": "Telegram & Conversion",
-                    "telegram.testButton": "Send Test Message",
-                    "telegram.enabled": "Enable Telegram upload",
-                    "telegram.botToken": "Bot Token",
-                    "telegram.chatId": "Chat ID",
-                    "telegram.apiEndpoint": "API Endpoint",
-                    "telegram.convertToM4A": "Extract M4A audio after each recording",
-                    "telegram.keepOriginal": "Keep the original TS file after conversion",
-                    "files.section": "File Manager",
-                    "files.upOneLevel": "Up One Level",
-                    "files.root": "Root",
-                    "table.name": "Name",
-                    "table.type": "Type",
-                    "table.size": "Size",
-                    "table.modified": "Modified",
-                    "logs.section": "Live Logs",
-                    "logs.hideOffline": "Hide offline polling"
-                },
-                ZH: {
-                    "document.title": "TwitCasting VPS 控制台",
-                    "hero.eyebrow": "無頭 Linux 控制室",
-                    "hero.title": "TwitCasting 錄影管理台",
-                    "hero.lede": "在為 Ubuntu VPS 設計的單一管理頁中，集中處理錄影、通知、檔案與更新檢查。",
-                    "actions.refresh": "重新整理",
-                    "actions.save": "儲存設定",
-                    "actions.startRecorder": "啟動錄影器",
-                    "actions.stopRecorder": "停止錄影器",
-                    "actions.restartRecorder": "重啟錄影器",
-                    "actions.restartBot": "重啟 Bot",
-                    "theme.useLight": "切換為亮色主題",
-                    "theme.useDark": "切換為暗色主題",
-                    "theme.ariaLight": "切換為亮色主題",
-                    "theme.ariaDark": "切換為暗色主題",
-                    "status.section": "服務狀態",
-                    "status.activeRecordings": "進行中的錄影",
-                    "system.section": "系統資訊",
-                    "system.checkUpdates": "檢查更新",
-                    "system.diagnostics": "診斷資訊",
-                    "settings.section": "一般與直播主設定",
-                    "settings.addStreamer": "新增直播主",
-                    "settings.addStreamerHint": "不確定怎麼填時，先打開欄位說明。",
-                    "settings.streamerGuide": "欄位說明",
-                    "settings.recorderLanguage": "錄影器語言",
-                    "settings.langEnglish": "英文",
-                    "settings.langChinese": "繁體中文",
-                    "settings.mirrorLogs": "同步寫入 `app.log`",
-                    "settings.twitcastingApiSection": "TwitCasting API（選填）",
-                    "twitcasting.clientId": "Client ID",
-                    "twitcasting.clientSecret": "Client Secret",
-                    "twitcasting.help": "填入官方 TwitCasting Client ID / Client Secret 後，直播主資料查詢會更穩定，大頭貼網址也會盡量升級成較高畫質。",
-                    "twitcasting.clientIdHelp": "這是 TwitCasting 官方 API 的應用程式識別碼，只用來查直播主資料，必須和 Client Secret 成對填寫。",
-                    "twitcasting.clientSecretHelp": "這是和 Client ID 配對的私密金鑰；如果不用官方 API，兩欄都留空即可，請不要公開這組資料。",
-                    "table.enabled": "啟用",
-                    "table.screenId": "Screen ID",
-                    "table.schedule": "秒數",
-                    "table.streamPassword": "直播密碼",
-                    "table.targetFolder": "目標資料夾",
-                    "table.actions": "操作",
-                    "common.close": "關閉",
-                    "common.cancel": "取消",
-                    "common.seconds": "秒",
-                    "streamer.checkButton": "檢查狀態",
-                    "streamer.enabledLabel": "啟用這位直播主",
-                    "streamer.helpScreenId": "請填 TwitCasting 網址中 `twitcasting.tv/` 後面的那段 ID。",
-                    "streamer.helpSchedule": "這是檢查直播是否開始的頻率，例如 5 代表每 5 秒檢查一次。",
-                    "streamer.helpFolder": "這位直播主的錄影檔會存到你指定的 `Recordings/` 子資料夾中。",
-                    "streamer.helpPassword": "只有該直播使用 TwitCasting 合言葉時才需要填寫。",
-                    "streamer.guideTitle": "直播主欄位怎麼填",
-                    "streamer.guideSaveNote": "改完直播主清單後，記得回主畫面按「儲存設定」才會真的寫入檔案。",
-                    "discord.section": "Discord 通知",
-                    "discord.testButton": "發送測試訊息",
-                    "discord.enabled": "啟用 Discord 通知",
-                    "discord.botToken": "Bot Token",
-                    "discord.guildId": "Guild ID",
-                    "discord.notifyChannel": "通知頻道 ID",
-                    "discord.archiveChannel": "歸檔頻道 ID",
-                    "discord.tagRole": "直播開始時提及該直播主的專屬身分組",
-                    "telegram.section": "Telegram 與轉檔",
-                    "telegram.testButton": "發送測試訊息",
-                    "telegram.enabled": "啟用 Telegram 上傳",
-                    "telegram.botToken": "Bot Token",
-                    "telegram.chatId": "Chat ID",
-                    "telegram.apiEndpoint": "API Endpoint",
-                    "telegram.convertToM4A": "每次錄影後抽取 M4A 音訊",
-                    "telegram.keepOriginal": "轉檔後保留原始 TS 檔",
-                    "files.section": "檔案管理",
-                    "files.upOneLevel": "回上一層",
-                    "files.root": "根目錄",
-                    "table.name": "名稱",
-                    "table.type": "類型",
-                    "table.size": "大小",
-                    "table.modified": "修改時間",
-                    "logs.section": "即時日誌",
-                    "logs.hideOffline": "隱藏離線輪詢"
-                }
-            };
 
-            let language = "EN";
-            try {
-                language = localStorage.getItem(langKey) === "ZH" ? "ZH" : "EN";
-            } catch {}
-
-            const table = translations[language] || translations.EN;
-            document.documentElement.lang = language === "ZH" ? "zh-Hant" : "en";
-            document.title = table["document.title"] || document.title;
-
-            document.querySelectorAll("[data-i18n]").forEach((element) => {
-                const key = element.getAttribute("data-i18n");
-                if (key && table[key]) {
-                    element.textContent = table[key];
-                }
-            });
-
-            const langInput = document.getElementById("langInput");
-            if (langInput) {
-                langInput.value = language;
-            }
-
-            const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
-            const themeToggleBtn = document.getElementById("themeToggleBtn");
-            if (themeToggleBtn) {
-                const isDark = theme === "dark";
-                themeToggleBtn.textContent = isDark ? table["theme.useLight"] : table["theme.useDark"];
-                themeToggleBtn.setAttribute("aria-label", isDark ? table["theme.ariaLight"] : table["theme.ariaDark"]);
-                themeToggleBtn.setAttribute("aria-pressed", String(isDark));
-            }
-        })();
-    </script>
     <script src="/assets/app.js" defer></script>
 </body>
 </html>
+
