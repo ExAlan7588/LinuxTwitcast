@@ -31,6 +31,7 @@ import (
 var assets embed.FS
 
 var lookupStreamerProfile = twitcasting.LookupStreamerProfile
+var convertManagedTSFile = telegram.ConvertManagedTSFile
 
 type Options struct {
 	Address  string
@@ -136,6 +137,7 @@ func NewServer(options Options, manager *service.Manager, restartRequested chan<
 	mux.Handle("/api/files/roots", server.withAuth(http.HandlerFunc(server.handleFileRoots)))
 	mux.Handle("/api/files", server.withAuth(http.HandlerFunc(server.handleFiles)))
 	mux.Handle("/api/files/download", server.withAuth(http.HandlerFunc(server.handleFileDownload)))
+	mux.Handle("/api/files/convert-m4a", server.withAuth(http.HandlerFunc(server.handleFileConvertM4A)))
 	mux.Handle("/api/files/telegram-upload", server.withAuth(http.HandlerFunc(server.handleFileTelegramUpload)))
 	mux.Handle("/api/files/delete", server.withAuth(http.HandlerFunc(server.handleFileDelete)))
 
@@ -672,6 +674,63 @@ func (s *Server) handleFileTelegramUpload(w http.ResponseWriter, r *http.Request
 		"uploaded": true,
 		"file":     filepath.Base(targetFile),
 		"method":   method,
+	})
+}
+
+func (s *Server) handleFileConvertM4A(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		Root string `json:"root"`
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if strings.TrimSpace(s.ffmpegPath) == "" {
+		s.writeError(w, http.StatusBadRequest, errors.New("ffmpeg is not available in PATH"))
+		return
+	}
+
+	_, targetFile, _, err := s.resolvePath(req.Root, req.Path)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	info, err := os.Lstat(targetFile)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		s.writeError(w, http.StatusBadRequest, errors.New("symlink conversion is not supported"))
+		return
+	}
+	if info.IsDir() {
+		s.writeError(w, http.StatusBadRequest, errors.New("directory conversion is not supported"))
+		return
+	}
+	if !strings.EqualFold(filepath.Ext(targetFile), ".ts") {
+		s.writeError(w, http.StatusBadRequest, errors.New("only .ts files can be converted"))
+		return
+	}
+
+	outputFile, err := convertManagedTSFile(targetFile)
+	if err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"converted": true,
+		"file":      filepath.Base(targetFile),
+		"output":    filepath.Base(outputFile),
 	})
 }
 

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jzhang046/croned-twitcasting-recorder/service"
@@ -185,6 +186,86 @@ func TestHandleFileTelegramUploadUsesDocumentForGenericFiles(t *testing.T) {
 	}
 	if receivedChatID != "chat-123" {
 		t.Fatalf("unexpected chat_id: %s", receivedChatID)
+	}
+}
+
+func TestHandleFileConvertM4ARejectsNonTSFiles(t *testing.T) {
+	rootDir := t.TempDir()
+	recordingsRoot := filepath.Join(rootDir, "Recordings")
+	if err := os.MkdirAll(recordingsRoot, 0755); err != nil {
+		t.Fatalf("mkdir recordings root: %v", err)
+	}
+	tempFile := filepath.Join(recordingsRoot, "notes.txt")
+	if err := os.WriteFile(tempFile, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body, err := json.Marshal(map[string]string{
+		"root": recordingsRoot,
+		"path": "notes.txt",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/files/convert-m4a", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleFileConvertM4AConvertsTSFiles(t *testing.T) {
+	rootDir := t.TempDir()
+	recordingsRoot := filepath.Join(rootDir, "Recordings")
+	if err := os.MkdirAll(recordingsRoot, 0755); err != nil {
+		t.Fatalf("mkdir recordings root: %v", err)
+	}
+	tempFile := filepath.Join(recordingsRoot, "sample.ts")
+	if err := os.WriteFile(tempFile, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	originalConvertManagedTSFile := convertManagedTSFile
+	convertManagedTSFile = func(filePath string) (string, error) {
+		if filePath != tempFile {
+			t.Fatalf("unexpected conversion path: %s", filePath)
+		}
+		return filepath.Join(recordingsRoot, "sample.m4a"), nil
+	}
+	t.Cleanup(func() {
+		convertManagedTSFile = originalConvertManagedTSFile
+	})
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body, err := json.Marshal(map[string]string{
+		"root": recordingsRoot,
+		"path": "sample.ts",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/files/convert-m4a", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "\"output\":\"sample.m4a\"") {
+		t.Fatalf("expected output file in response, got %s", recorder.Body.String())
 	}
 }
 

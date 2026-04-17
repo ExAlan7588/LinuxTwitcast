@@ -34,6 +34,11 @@ type UploadResult struct {
 	MessageURL string
 }
 
+type m4aStrategy struct {
+	Name string
+	Args []string
+}
+
 type telegramAPIResponse struct {
 	OK          bool            `json:"ok"`
 	Description string          `json:"description"`
@@ -94,18 +99,10 @@ func Process(cfg Config, session record.SessionInfo) UploadResult {
 	// 1. Convert to M4A if needed
 	if cfg.ConvertToM4A {
 		m4aFile := taggedM4APath(session)
-		coverFile, cleanupCover, err := downloadCoverArt(sessionCoverArtURL(session))
-		if err != nil {
-			log.Printf("[Telegram] Failed downloading cover art: %v", err)
-		}
-		if cleanupCover != nil {
-			defer cleanupCover()
-		}
-
 		log.Printf("[Telegram] Extracting audio to %s\n", m4aFile)
-		out, err := runFFmpeg(buildM4AArgs(session, targetFile, m4aFile, coverFile)...)
+		err := ConvertFileToM4A(session, targetFile, m4aFile)
 		if err != nil {
-			log.Printf("[Telegram] FFmpeg extraction failed: %v\nOutput: %s", err, string(out))
+			log.Printf("[Telegram] FFmpeg extraction failed: %v", err)
 			return UploadResult{}
 		} else {
 			log.Printf("[Telegram] FFmpeg extraction successful")
@@ -129,13 +126,87 @@ func Process(cfg Config, session record.SessionInfo) UploadResult {
 	return result
 }
 
+func ConvertManagedTSFile(filePath string) (string, error) {
+	if !strings.EqualFold(filepath.Ext(filePath), ".ts") {
+		return "", fmt.Errorf("only .ts files can be converted to m4a")
+	}
+
+	outputFile := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".m4a"
+	session := record.SessionInfo{
+		Filename:  filePath,
+		Title:     strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath)),
+		StartedAt: time.Now(),
+	}
+
+	if err := ConvertFileToM4A(session, filePath, outputFile); err != nil {
+		return "", err
+	}
+	return outputFile, nil
+}
+
+func ConvertFileToM4A(session record.SessionInfo, inputFile, outputFile string) error {
+	coverFile, cleanupCover, err := downloadCoverArt(sessionCoverArtURL(session))
+	if err != nil {
+		log.Printf("[Telegram] Failed downloading cover art: %v", err)
+	}
+	if cleanupCover != nil {
+		defer cleanupCover()
+	}
+
+	failures := make([]string, 0, 4)
+	for _, strategy := range buildM4AStrategies(session, inputFile, outputFile, coverFile) {
+		out, err := runFFmpeg(strategy.Args...)
+		if err == nil {
+			return nil
+		}
+		_ = os.Remove(outputFile)
+		failures = append(failures, fmt.Sprintf("%s: %v | %s", strategy.Name, err, strings.TrimSpace(string(out))))
+	}
+
+	return fmt.Errorf("all m4a conversion attempts failed: %s", strings.Join(failures, " || "))
+}
+
+func buildM4AStrategies(session record.SessionInfo, inputFile, outputFile, coverFile string) []m4aStrategy {
+	return []m4aStrategy{
+		{
+			Name: "copy-audio",
+			Args: buildM4AArgs(session, inputFile, outputFile, coverFile, false, false),
+		},
+		{
+			Name: "force-mpegts-copy-audio",
+			Args: buildM4AArgs(session, inputFile, outputFile, coverFile, true, false),
+		},
+		{
+			Name: "reencode-aac",
+			Args: buildM4AArgs(session, inputFile, outputFile, coverFile, false, true),
+		},
+		{
+			Name: "force-mpegts-reencode-aac",
+			Args: buildM4AArgs(session, inputFile, outputFile, coverFile, true, true),
+		},
+	}
+}
+
 // 这里把文件名、元数据和封面统一在一个地方生成，避免 ffmpeg 参数散落在流程里难维护。
-func buildM4AArgs(session record.SessionInfo, inputFile, outputFile, coverFile string) []string {
-	args := []string{"-y", "-i", inputFile}
+func buildM4AArgs(session record.SessionInfo, inputFile, outputFile, coverFile string, forceMpegTS bool, reencodeAAC bool) []string {
+	args := []string{"-y"}
+	if forceMpegTS {
+		args = append(args, "-f", "mpegts")
+	}
+	args = append(args, "-i", inputFile)
+
+	audioArgs := []string{"-c:a", "copy"}
+	if reencodeAAC {
+		audioArgs = []string{"-c:a", "aac", "-b:a", "192k"}
+	}
+
 	if strings.TrimSpace(coverFile) != "" {
-		args = append(args, "-i", coverFile, "-map", "0:a:0", "-map", "1:v:0", "-c:a", "copy", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic")
+		args = append(args, "-i", coverFile, "-map", "0:a:0", "-map", "1:v:0")
+		args = append(args, audioArgs...)
+		args = append(args, "-c:v", "mjpeg", "-disposition:v:0", "attached_pic")
 	} else {
-		args = append(args, "-vn", "-c:a", "copy")
+		args = append(args, "-vn")
+		args = append(args, audioArgs...)
 	}
 	args = append(args, buildM4AMetadataArgs(session)...)
 	if strings.TrimSpace(coverFile) != "" {

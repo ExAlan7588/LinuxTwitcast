@@ -119,7 +119,11 @@ const I18N = {
         "files.notCreatedYet": "not created yet",
         "files.empty": "This folder is currently empty.",
         "files.upload": "Upload",
+        "files.convert": "Convert",
+        "files.converting": "Converting...",
         "files.uploading": "Uploading...",
+        "files.convertConfirm": "Convert {name} to M4A now?",
+        "files.converted": "{name} was converted to {output}.",
         "files.uploadConfirm": "Upload {name} to Telegram now?",
         "files.uploaded": "{name} was uploaded to Telegram as {mode}.",
         "files.download": "Download",
@@ -283,7 +287,11 @@ const I18N = {
         "files.notCreatedYet": "尚未建立",
         "files.empty": "這個資料夾目前是空的。",
         "files.upload": "上傳",
+        "files.convert": "轉檔",
+        "files.converting": "轉檔中...",
         "files.uploading": "上傳中...",
+        "files.convertConfirm": "現在要把 {name} 轉成 M4A 嗎？",
+        "files.converted": "{name} 已轉成 {output}。",
         "files.uploadConfirm": "現在要把 {name} 上傳到 Telegram 嗎？",
         "files.uploaded": "{name} 已作為 {mode} 上傳到 Telegram。",
         "files.download": "下載",
@@ -1386,6 +1394,34 @@ function createFileRow(entry) {
     modifiedCell.textContent = formatDate(entry.modified_at);
 
     if (entry.downloadable) {
+        if (isTSFileEntry(entry)) {
+            const convertButton = document.createElement("button");
+            convertButton.type = "button";
+            convertButton.className = "table-link";
+            convertButton.textContent = prefixedActionLabel(actionsCell.childNodes.length > 0, t("files.convert"));
+            convertButton.addEventListener("click", async () => {
+                if (!window.confirm(t("files.convertConfirm", { name: entry.name }))) {
+                    return;
+                }
+
+                const originalLabel = convertButton.textContent;
+                convertButton.disabled = true;
+                convertButton.textContent = prefixedActionLabel(actionsCell.childNodes.length > 0, t("files.converting"));
+                try {
+                    const result = await api("/api/files/convert-m4a", {
+                        method: "POST",
+                        body: JSON.stringify({ root: fileState.root, path: entry.path })
+                    });
+                    showToast(t("files.converted", { name: entry.name, output: result.output || `${entry.name}.m4a` }));
+                    await browseFiles(fileState.root, fileState.path);
+                } finally {
+                    convertButton.disabled = false;
+                    convertButton.textContent = originalLabel;
+                }
+            });
+            actionsCell.appendChild(convertButton);
+        }
+
         const uploadButton = document.createElement("button");
         uploadButton.type = "button";
         uploadButton.className = "table-link";
@@ -1444,6 +1480,10 @@ function createFileRow(entry) {
 
     row.append(nameCell, typeCell, sizeCell, modifiedCell, actionsCell);
     return row;
+}
+
+function isTSFileEntry(entry) {
+    return entry.type === "file" && /\.ts$/i.test(String(entry.name || ""));
 }
 
 function prefixedActionLabel(hasPrefix, label) {

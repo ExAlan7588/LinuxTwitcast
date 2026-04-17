@@ -94,7 +94,7 @@ func TestBuildM4AArgsIncludesMetadataAndCover(t *testing.T) {
 		CoverURL:     "https://example.test/cover.jpg",
 	}
 
-	args := buildM4AArgs(session, session.Filename, `C:\recordings\out.m4a`, `C:\temp\cover.jpg`)
+	args := buildM4AArgs(session, session.Filename, `C:\recordings\out.m4a`, `C:\temp\cover.jpg`, false, false)
 	joined := strings.Join(args, " ")
 
 	for _, needle := range []string{
@@ -113,7 +113,7 @@ func TestBuildM4AArgsIncludesMetadataAndCover(t *testing.T) {
 	}
 }
 
-func TestProcessSkipsUploadWhenFFmpegFails(t *testing.T) {
+func TestProcessRetriesConversionStrategiesAfterCopyFailure(t *testing.T) {
 	originalRunFFmpeg := runFFmpeg
 	originalUploadTelegramFile := uploadTelegramFile
 	defer func() {
@@ -128,8 +128,20 @@ func TestProcessSkipsUploadWhenFFmpegFails(t *testing.T) {
 	}
 
 	uploadCalls := 0
+	ffmpegCalls := 0
 	runFFmpeg = func(args ...string) ([]byte, error) {
-		return []byte("ffmpeg failed"), errors.New("boom")
+		ffmpegCalls++
+		joined := strings.Join(args, " ")
+		if ffmpegCalls == 1 {
+			if !strings.Contains(joined, "-c:a copy") {
+				t.Fatalf("expected first attempt to use copy audio, got %q", joined)
+			}
+			return []byte("copy failed"), errors.New("boom")
+		}
+		if !strings.Contains(joined, "-f mpegts") {
+			t.Fatalf("expected second attempt to force mpegts, got %q", joined)
+		}
+		return []byte("ok"), nil
 	}
 	uploadTelegramFile = func(cfg Config, filePath string, caption string) (UploadResult, error) {
 		uploadCalls++
@@ -148,11 +160,20 @@ func TestProcessSkipsUploadWhenFFmpegFails(t *testing.T) {
 		StartedAt:    time.Date(2026, 4, 14, 9, 0, 0, 0, time.UTC),
 	})
 
-	if uploadCalls != 0 {
-		t.Fatalf("expected no Telegram upload when ffmpeg fails, got %d calls", uploadCalls)
+	if uploadCalls != 1 {
+		t.Fatalf("expected upload to continue after fallback conversion, got %d calls", uploadCalls)
 	}
-	if _, err := os.Stat(sourceFile); err != nil {
-		t.Fatalf("expected original file to remain after ffmpeg failure, stat err: %v", err)
+	if ffmpegCalls != 2 {
+		t.Fatalf("expected 2 ffmpeg attempts, got %d", ffmpegCalls)
+	}
+	if _, err := os.Stat(sourceFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected original file to be removed after successful conversion, stat err: %v", err)
+	}
+}
+
+func TestConvertManagedTSFileRejectsNonTS(t *testing.T) {
+	if _, err := ConvertManagedTSFile("recording.mp3"); err == nil {
+		t.Fatal("expected non-ts conversion to fail")
 	}
 }
 
