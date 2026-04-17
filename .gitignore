@@ -71,9 +71,7 @@ recordings/
 # Temp / tooling
 # =========================
 .codex-turbo-src/
-codex-turbo-install-staging/
-codex-turbo-install-staging-home/
-codex-turbo-src/
+codex*/
 
 # =========================
 # OS / editor

@@ -343,6 +343,20 @@ h1 {
     line-height: 1.5;
 }
 
+.helper-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.helper-links a {
+    color: var(--accent-strong);
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
 .validation-status {
     display: block;
     min-height: 18px;

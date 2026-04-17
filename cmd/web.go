@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,7 +30,7 @@ func RecordWeb(args []string) {
 	if (*username == "") != (*password == "") {
 		log.Fatalln("Both --username and --password must be set together")
 	}
-	if isPublicListen(*addr) && *username == "" && !*allowPublicNoAuth {
+	if admin.IsPublicListen(*addr) && *username == "" && !*allowPublicNoAuth {
 		log.Fatalln("Refusing to bind a public web address without authentication. Set --username/--password or pass --allow-public-no-auth if a reverse proxy already protects it.")
 	}
 
@@ -117,20 +116,4 @@ func envOrDefault(name, fallback string) string {
 func envBool(name string) bool {
 	value := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
 	return value == "1" || value == "true" || value == "yes" || value == "on"
-}
-
-func isPublicListen(addr string) bool {
-	host := strings.TrimSpace(addr)
-	if parsedHost, _, err := net.SplitHostPort(addr); err == nil {
-		host = parsedHost
-	}
-
-	switch host {
-	case "", "0.0.0.0", "::":
-		return true
-	case "127.0.0.1", "localhost", "::1":
-		return false
-	default:
-		return true
-	}
 }

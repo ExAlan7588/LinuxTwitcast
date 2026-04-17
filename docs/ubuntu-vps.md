@@ -46,7 +46,7 @@ If you already protect the app behind Nginx, Caddy, Tailscale, or an SSH tunnel,
 - Edit `config.json`, `discord.json`, and `telegram.json`
 - Start, stop, and restart the recorder
 - View recent logs captured from the Go process
-- Browse recording folders and the project workspace
+- Browse recording folders under `Recordings` only
 - Download files
 - Delete files or empty directories
 
