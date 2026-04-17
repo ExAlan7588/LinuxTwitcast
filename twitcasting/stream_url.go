@@ -233,6 +233,24 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 	if pageInfo.memberOnly {
 		return result, wrapStreamLookupError(ErrMemberOnlyLive, result)
 	}
+	if movieID, err := jq.String("movie", "id"); err == nil {
+		if movieInfo, movieErr := fetchMovieInfo(streamer, movieID); movieErr == nil {
+			if movieInfo.streamerName != "" && movieInfo.streamerName != streamer {
+				result.StreamerName = movieInfo.streamerName
+			}
+			if movieInfo.title != "" {
+				result.Title = movieInfo.title
+			}
+			if movieInfo.avatarURL != "" {
+				result.AvatarURL = movieInfo.avatarURL
+			}
+			if movieInfo.coverURL != "" {
+				result.CoverURL = movieInfo.coverURL
+			}
+		} else {
+			log.Printf("Failed fetching movie page info for streamer [%s] movie [%s]: %v\n", streamer, movieID, movieErr)
+		}
+	}
 
 	// Try to get URL directly
 	if streamURL, err := getDirectStreamURL(jq); err == nil {
@@ -307,6 +325,37 @@ func fetchStreamInfo(streamer string) streamPageInfo {
 		return streamPageInfo{streamerName: streamer}
 	}
 	return info
+}
+
+func fetchMovieInfo(streamer, movieID string) (streamPageInfo, error) {
+	screenID := strings.TrimSpace(streamer)
+	trimmedMovieID := strings.TrimSpace(movieID)
+	if screenID == "" || trimmedMovieID == "" {
+		return streamPageInfo{streamerName: streamer}, errors.New("streamer and movieID are required")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s/movie/%s", baseDomain, screenID, trimmedMovieID), nil)
+	if err != nil {
+		return streamPageInfo{streamerName: streamer}, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return streamPageInfo{streamerName: streamer}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return streamPageInfo{streamerName: streamer}, fmt.Errorf("unexpected movie page status: %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return streamPageInfo{streamerName: streamer}, err
+	}
+
+	return parseStreamPageInfo(screenID, string(bodyBytes)), nil
 }
 
 func fetchStreamInfoWithStatus(streamer string) (streamPageInfo, int, error) {

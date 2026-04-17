@@ -152,6 +152,61 @@ func TestLookupStreamerProfileReturnsNotFoundOn404(t *testing.T) {
 	}
 }
 
+func TestGetWSStreamUrlWithPasswordPrefersMoviePageTitle(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/mielu_ii":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`
+				<html>
+					<head>
+						<title>♡ - ミエル (@mielu_ii) - TwitCasting</title>
+						<meta name="twitter:title" content="♡">
+					</head>
+				</html>
+			`))
+		case "/mielu_ii/movie/833988018":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`
+				<html>
+					<head>
+						<title>3日連続食べた🍄 / ♡ - ミエル (@mielu_ii) - TwitCasting</title>
+						<meta name="twitter:title" content="3日連続食べた🍄 / ♡">
+					</head>
+					<body>
+						<div data-broadcaster-profile-image="//imagegw02.twitcasting.tv/mielu.jpg"></div>
+					</body>
+				</html>
+			`))
+		case "/streamserver.php":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"movie": {"live": true, "id": "833988018"},
+				"llfmp4": {"streams": {"main": "wss://stream.example/live"}}
+			}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	useTwitCastingTestHTTPClient(t, server)
+
+	result, err := GetWSStreamUrlWithPassword("mielu_ii", "")
+	if err != nil {
+		t.Fatalf("GetWSStreamUrlWithPassword() error = %v", err)
+	}
+	if result.Title != "3日連続食べた🍄 ／ ♡" {
+		t.Fatalf("Title = %q, want %q", result.Title, "3日連続食べた🍄 ／ ♡")
+	}
+	if result.StreamerName != "ミエル" {
+		t.Fatalf("StreamerName = %q, want %q", result.StreamerName, "ミエル")
+	}
+	if result.StreamURL != "wss://stream.example/live" {
+		t.Fatalf("StreamURL = %q, want %q", result.StreamURL, "wss://stream.example/live")
+	}
+}
+
 func useTwitCastingTestHTTPClient(t *testing.T, server *httptest.Server) {
 	t.Helper()
 
