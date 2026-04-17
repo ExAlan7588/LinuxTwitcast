@@ -97,10 +97,12 @@
                     <label>
                         <span data-i18n="twitcasting.clientId">Client ID</span>
                         <input id="twitcastingClientIdInput" type="text" autocomplete="off">
+                        <small class="field-help" data-i18n="twitcasting.clientIdHelp">This is the public app ID for TwitCasting's official API. It only helps this console look up streamer profile data, and must be paired with Client Secret.</small>
                     </label>
                     <label>
                         <span data-i18n="twitcasting.clientSecret">Client Secret</span>
                         <input id="twitcastingClientSecretInput" type="password" autocomplete="new-password">
+                        <small class="field-help" data-i18n="twitcasting.clientSecretHelp">This is the private key paired with the Client ID. Leave both fields empty if you do not use the official API, and do not share this secret publicly.</small>
                     </label>
                 </div>
             </div>
@@ -352,6 +354,8 @@
                     "twitcasting.clientId": "Client ID",
                     "twitcasting.clientSecret": "Client Secret",
                     "twitcasting.help": "Use an official TwitCasting Client ID / Client Secret for more reliable profile lookups and higher-quality avatar URLs.",
+                    "twitcasting.clientIdHelp": "This is the public app ID for TwitCasting's official API. It only helps this console look up streamer profile data, and must be paired with Client Secret.",
+                    "twitcasting.clientSecretHelp": "This is the private key paired with the Client ID. Leave both fields empty if you do not use the official API, and do not share this secret publicly.",
                     "table.enabled": "Enabled",
                     "table.screenId": "Screen ID",
                     "table.schedule": "Interval",
@@ -427,6 +431,8 @@
                     "twitcasting.clientId": "Client ID",
                     "twitcasting.clientSecret": "Client Secret",
                     "twitcasting.help": "填入官方 TwitCasting Client ID / Client Secret 後，直播主資料查詢會更穩定，大頭貼網址也會盡量升級成較高畫質。",
+                    "twitcasting.clientIdHelp": "這是 TwitCasting 官方 API 的應用程式識別碼，只用來查直播主資料，必須和 Client Secret 成對填寫。",
+                    "twitcasting.clientSecretHelp": "這是和 Client ID 配對的私密金鑰；如果不用官方 API，兩欄都留空即可，請不要公開這組資料。",
                     "table.enabled": "啟用",
                     "table.screenId": "Screen ID",
                     "table.schedule": "秒數",

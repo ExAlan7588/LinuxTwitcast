@@ -707,6 +707,7 @@ td.actions-cell {
     position: fixed;
     right: 20px;
     bottom: 20px;
+    z-index: 80;
     max-width: min(440px, calc(100vw - 32px));
     padding: 14px 18px;
     border-radius: 16px;
