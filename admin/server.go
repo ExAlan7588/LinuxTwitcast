@@ -698,11 +698,6 @@ func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, strin
 	}
 
 	targetAbs := filepath.Clean(filepath.Join(rootAbs, relativePath))
-	targetAbs, err := filepath.Abs(targetAbs)
-	if err != nil {
-		return "", "", "", err
-	}
-
 	if !pathWithinRoot(rootAbs, targetAbs) {
 		return "", "", "", errors.New("path escapes the allowed root")
 	}
