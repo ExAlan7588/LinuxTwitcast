@@ -170,7 +170,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			ListenAddress:    s.options.Address,
 			AuthEnabled:      s.options.Username != "",
 		},
-		"file_roots":    BuildFileRoots(s.options.RootDir, settings),
+		"file_roots":    BuildFileRoots(s.options.RootDir),
 		"diagnostics":   s.buildDiagnostics(settings, status, ffmpegPath),
 		"needs_restart": status.Running,
 	})
@@ -408,13 +408,7 @@ func (s *Server) handleFileRoots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := LoadSettings()
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	s.writeJSON(w, BuildFileRoots(s.options.RootDir, settings))
+	s.writeJSON(w, BuildFileRoots(s.options.RootDir))
 }
 
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
@@ -650,15 +644,10 @@ func (s *Server) handleFileTelegramUpload(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, string, string, error) {
-	settings, err := LoadSettings()
-	if err != nil {
-		return "", "", "", err
-	}
-
-	allowedRoots := BuildFileRoots(s.options.RootDir, settings)
+	allowedRoots := BuildFileRoots(s.options.RootDir)
 	rootDir := filepath.Clean(strings.TrimSpace(requestedRoot))
-	if rootDir == "" {
-		rootDir = filepath.Clean(s.options.RootDir)
+	if rootDir == "" && len(allowedRoots) > 0 {
+		rootDir = filepath.Clean(allowedRoots[0].Root)
 	}
 
 	allowed := false

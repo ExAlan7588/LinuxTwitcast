@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,7 +57,11 @@ func TestHandleBotRestartRejectsWrongMethod(t *testing.T) {
 
 func TestHandleFileTelegramUploadUsesDocumentForGenericFiles(t *testing.T) {
 	rootDir := t.TempDir()
-	tempFile := filepath.Join(rootDir, "notes.txt")
+	recordingsRoot := filepath.Join(rootDir, "Recordings")
+	if err := os.MkdirAll(recordingsRoot, 0755); err != nil {
+		t.Fatalf("mkdir recordings root: %v", err)
+	}
+	tempFile := filepath.Join(recordingsRoot, "notes.txt")
 	if err := os.WriteFile(tempFile, []byte("hello"), 0644); err != nil {
 		t.Fatalf("write test file: %v", err)
 	}
@@ -104,7 +109,7 @@ func TestHandleFileTelegramUploadUsesDocumentForGenericFiles(t *testing.T) {
 	}, service.NewManager(), nil)
 
 	body, err := json.Marshal(map[string]string{
-		"root": rootDir,
+		"root": recordingsRoot,
 		"path": "notes.txt",
 	})
 	if err != nil {
@@ -290,6 +295,24 @@ func TestHandleFileDeleteRejectsNonRecordingsRoot(t *testing.T) {
 
 	body := bytes.NewBufferString(fmt.Sprintf(`{"root":%q,"path":"notes.txt"}`, rootDir))
 	req := httptest.NewRequest(http.MethodPost, "/api/files/delete", body)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleFilesRejectsProjectRoot(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files?root="+url.QueryEscape(rootDir), nil)
 	recorder := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(recorder, req)
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -107,57 +106,16 @@ func ValidateSettings(settings *Settings) error {
 	return nil
 }
 
-func BuildFileRoots(rootDir string, settings Settings) []FileRoot {
-	roots := map[string]FileRoot{}
-	addRoot := func(label, candidate string) {
-		if strings.TrimSpace(candidate) == "" {
-			return
-		}
-
-		root := candidate
-		if !filepath.IsAbs(root) {
-			root = filepath.Join(rootDir, candidate)
-		}
-		root = filepath.Clean(root)
-		if _, exists := roots[root]; exists {
-			return
-		}
-
-		_, err := os.Stat(root)
-		roots[root] = FileRoot{
-			Label:  label,
-			Root:   root,
+func BuildFileRoots(rootDir string) []FileRoot {
+	recordingsRoot := filepath.Clean(filepath.Join(rootDir, "Recordings"))
+	_, err := os.Stat(recordingsRoot)
+	return []FileRoot{
+		{
+			Label:  "Recordings",
+			Root:   recordingsRoot,
 			Exists: err == nil,
-		}
+		},
 	}
-
-	addRoot("Project Workspace", rootDir)
-	addRoot("Recordings", filepath.Join(rootDir, "Recordings"))
-
-	for _, streamer := range settings.App.Streamers {
-		if streamer == nil {
-			continue
-		}
-		folder := strings.TrimSpace(streamer.Folder)
-		if folder == "" {
-			continue
-		}
-		addRoot(fmt.Sprintf("Streamer: %s", streamer.ScreenId), folder)
-	}
-
-	list := make([]FileRoot, 0, len(roots))
-	for _, root := range roots {
-		list = append(list, root)
-	}
-
-	sort.Slice(list, func(i, j int) bool {
-		if list[i].Label == list[j].Label {
-			return list[i].Root < list[j].Root
-		}
-		return list[i].Label < list[j].Label
-	})
-
-	return list
 }
 
 func validateSchedule(value string) error {
