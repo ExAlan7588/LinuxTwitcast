@@ -177,7 +177,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := LoadSettings()
+	appConfig, telegramCfg, err := LoadRuntimeDiagnosticsConfig()
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, err)
 		return
@@ -201,7 +201,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			AuthEnabled:      s.options.Username != "",
 		},
 		"file_roots":    s.fileRoots,
-		"diagnostics":   s.buildDiagnostics(settings, status, ffmpegPath),
+		"diagnostics":   s.buildDiagnostics(appConfig, telegramCfg, status, ffmpegPath),
 		"needs_restart": status.Running,
 	})
 }
@@ -710,19 +710,19 @@ func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, strin
 	return rootAbs, targetAbs, relativePath, nil
 }
 
-func (s *Server) buildDiagnostics(settings Settings, status service.Status, ffmpegPath string) []Diagnostic {
+func (s *Server) buildDiagnostics(app config.AppConfig, telegramCfg telegram.Config, status service.Status, ffmpegPath string) []Diagnostic {
 	diagnostics := []Diagnostic{}
 	add := func(level, message string) {
 		diagnostics = append(diagnostics, Diagnostic{Level: level, Message: message})
 	}
 
-	if config.EnabledStreamers(&settings.App) == 0 {
+	if config.EnabledStreamers(&app) == 0 {
 		add("warn", "No enabled streamers are configured. The recorder cannot start until at least one streamer is enabled.")
 	}
-	if settings.Telegram.Enabled && settings.Telegram.ConvertToM4A && ffmpegPath == "" {
+	if telegramCfg.Enabled && telegramCfg.ConvertToM4A && ffmpegPath == "" {
 		add("error", "Telegram audio extraction is enabled, but ffmpeg is not available in PATH.")
 	}
-	if settings.Telegram.Enabled && strings.Contains(strings.TrimSpace(settings.Telegram.ApiEndpoint), "127.0.0.1:8081") {
+	if telegramCfg.Enabled && strings.Contains(strings.TrimSpace(telegramCfg.ApiEndpoint), "127.0.0.1:8081") {
 		add("warn", "Telegram uploads are pointed at a local Bot API endpoint. Make sure that service also runs on the VPS, or switch back to https://api.telegram.org.")
 	}
 	if IsPublicListen(s.options.Address) && s.options.Username == "" {

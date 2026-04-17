@@ -106,6 +106,15 @@ func ValidateSettings(settings *Settings) error {
 	return nil
 }
 
+func LoadRuntimeDiagnosticsConfig() (config.AppConfig, telegram.Config, error) {
+	appConfig, err := config.LoadDefault()
+	if err != nil {
+		return config.AppConfig{}, telegram.Config{}, err
+	}
+
+	return *appConfig, telegram.LoadConfig(), nil
+}
+
 func BuildFileRoots(rootDir string) []FileRoot {
 	recordingsRoot := filepath.Clean(filepath.Join(rootDir, "Recordings"))
 	_, err := os.Stat(recordingsRoot)
