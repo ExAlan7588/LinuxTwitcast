@@ -46,6 +46,8 @@ type Server struct {
 	httpServer       *http.Server
 	buildInfo        BuildInfo
 	fileRoots        []FileRoot
+	fileRootByPath   map[string]string
+	recordingsRoot   string
 	executablePath   string
 	ffmpegPath       string
 }
@@ -87,6 +89,23 @@ type FileListResponse struct {
 func NewServer(options Options, manager *service.Manager, restartRequested chan<- struct{}) *Server {
 	executable, _ := os.Executable()
 	ffmpegPath, _ := exec.LookPath("ffmpeg")
+	fileRoots := BuildFileRoots(options.RootDir)
+	fileRootByPath := make(map[string]string, len(fileRoots)*2)
+	recordingsRoot := ""
+	for _, root := range fileRoots {
+		rootAbs, err := filepath.Abs(filepath.Clean(root.Root))
+		if err != nil {
+			rootAbs = filepath.Clean(root.Root)
+		}
+		rootAbs = filepath.Clean(rootAbs)
+
+		cleanRoot := filepath.Clean(root.Root)
+		fileRootByPath[cleanRoot] = rootAbs
+		fileRootByPath[rootAbs] = rootAbs
+		if recordingsRoot == "" {
+			recordingsRoot = rootAbs
+		}
+	}
 
 	server := &Server{
 		options:          options,
@@ -95,7 +114,9 @@ func NewServer(options Options, manager *service.Manager, restartRequested chan<
 		buildInfo:        LoadBuildInfo(options.RootDir),
 		executablePath:   executable,
 		ffmpegPath:       ffmpegPath,
-		fileRoots:        BuildFileRoots(options.RootDir),
+		fileRoots:        fileRoots,
+		fileRootByPath:   fileRootByPath,
+		recordingsRoot:   recordingsRoot,
 	}
 
 	mux := http.NewServeMux()
@@ -556,10 +577,12 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	recordingsRoot, err := filepath.Abs(filepath.Join(s.options.RootDir, "Recordings"))
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err)
-		return
+	recordingsRoot := s.recordingsRoot
+	if recordingsRoot == "" {
+		recordingsRoot = filepath.Clean(filepath.Join(s.options.RootDir, "Recordings"))
+		if abs, err := filepath.Abs(recordingsRoot); err == nil {
+			recordingsRoot = filepath.Clean(abs)
+		}
 	}
 	if !pathWithinRoot(recordingsRoot, targetPath) {
 		s.writeError(w, http.StatusBadRequest, errors.New("deletion is limited to the Recordings directory"))
@@ -659,14 +682,13 @@ func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, strin
 		rootDir = filepath.Clean(allowedRoots[0].Root)
 	}
 
-	allowed := false
-	for _, root := range allowedRoots {
-		if filepath.Clean(root.Root) == rootDir {
-			allowed = true
-			break
+	rootAbs, ok := s.fileRootByPath[rootDir]
+	if !ok {
+		if abs, err := filepath.Abs(rootDir); err == nil {
+			rootAbs = s.fileRootByPath[filepath.Clean(abs)]
 		}
 	}
-	if !allowed {
+	if rootAbs == "" {
 		return "", "", "", errors.New("unknown file root")
 	}
 
@@ -675,12 +697,8 @@ func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, strin
 		relativePath = ""
 	}
 
-	targetPath := filepath.Join(rootDir, relativePath)
-	rootAbs, err := filepath.Abs(rootDir)
-	if err != nil {
-		return "", "", "", err
-	}
-	targetAbs, err := filepath.Abs(targetPath)
+	targetAbs := filepath.Clean(filepath.Join(rootAbs, relativePath))
+	targetAbs, err := filepath.Abs(targetAbs)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -734,8 +752,6 @@ func (s *Server) buildDiagnostics(settings Settings, status service.Status, ffmp
 			add("info", message)
 		}
 	}
-	add("info", "Ubuntu 24.04 LTS is the current Ubuntu 24 LTS release. If you meant Ubuntu 24.02, use 24.04 instead.")
-
 	return diagnostics
 }
 
