@@ -138,8 +138,10 @@ func (m *Manager) Start() error {
 		streamerCfg := *streamerCfg
 
 		var streamerNotifier record.DiscordNotifier
+		var discordNotifier *discord.Notifier
 		if notifier := discord.NewNotifierFromConfig(discordCfg, streamerCfg.ScreenId); notifier != nil {
 			streamerNotifier = notifier
+			discordNotifier = notifier
 		}
 
 		recordFunc := record.ToRecordFunc(&record.RecordConfig{
@@ -155,7 +157,12 @@ func (m *Manager) Start() error {
 			RootContext:    rootCtx,
 			Notifier:       streamerNotifier,
 			PostProcessor: func(session record.SessionInfo) {
-				telegram.Process(telegramCfg, session)
+				uploadResult := telegram.Process(telegramCfg, session)
+				if discordNotifier != nil && strings.TrimSpace(uploadResult.MessageURL) != "" {
+					if err := discordNotifier.UpdateArchiveWithTelegramLink(session, uploadResult.MessageURL); err != nil {
+						log.Printf("[Discord] Failed to attach Telegram archive link for [%s]: %v\n", session.Streamer, err)
+					}
+				}
 			},
 			OnSessionStart: m.handleSessionStart,
 			OnSessionEnd:   m.handleSessionEnd,
@@ -393,6 +400,7 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 					StreamerName: streamerName,
 					Title:        lookup.Title,
 					AvatarURL:    lookup.AvatarURL,
+					CoverURL:     lookup.CoverURL,
 					StartedAt:    time.Now(),
 				},
 				notifier: discord.NewNotifierFromConfig(discord.LoadConfig(), streamer),

@@ -46,6 +46,7 @@ type StreamLookupResult struct {
 	StreamerName string
 	Title        string
 	AvatarURL    string
+	CoverURL     string
 }
 
 type SessionInfo struct {
@@ -53,6 +54,7 @@ type SessionInfo struct {
 	StreamerName string    `json:"streamer_name"`
 	Title        string    `json:"title"`
 	AvatarURL    string    `json:"avatar_url,omitempty"`
+	CoverURL     string    `json:"cover_url,omitempty"`
 	Filename     string    `json:"filename"`
 	StartedAt    time.Time `json:"started_at"`
 	EndedAt      time.Time `json:"ended_at,omitempty"`
@@ -83,6 +85,7 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 			StreamerName: lookup.StreamerName,
 			Title:        lookup.Title,
 			AvatarURL:    lookup.AvatarURL,
+			CoverURL:     lookup.CoverURL,
 			Filename:     sink.Filename(),
 			StartedAt:    time.Now(),
 		}
@@ -102,13 +105,13 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 
 		// Wait for the sink file to finish writing before continuing
 		sink.Wait()
+		session.EndedAt = time.Now()
 
 		// Notify Discord that recording has ended
 		if recordConfig.Notifier != nil {
 			recordConfig.Notifier.NotifyEnd(session)
 		}
 		if recordConfig.OnSessionEnd != nil {
-			session.EndedAt = time.Now()
 			recordConfig.OnSessionEnd(session)
 		}
 

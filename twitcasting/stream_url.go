@@ -90,6 +90,7 @@ type streamPageInfo struct {
 	streamerName     string
 	title            string
 	avatarURL        string
+	coverURL         string
 	passwordRequired bool
 	memberOnly       bool
 }
@@ -161,6 +162,7 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 		StreamerName: pageInfo.streamerName,
 		Title:        pageInfo.title,
 		AvatarURL:    pageInfo.avatarURL,
+		CoverURL:     pageInfo.coverURL,
 	}
 	if pageInfo.passwordRequired && strings.TrimSpace(password) == "" {
 		return result, ErrPasswordRequired
@@ -378,7 +380,8 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 	}
 
 	// TwitCasting 页面里同时有直播封面和主播头像。
-	// 这里先抓 broadcaster profile image，最后才 fallback 到 og:image / twitter:image。
+	// 这里把两者拆开保存，避免再把封面误当成主播头像。
+	info.coverURL = extractCoverURL(bodyStr)
 	info.avatarURL = extractAvatarURL(bodyStr)
 	info.streamerName = sanitizeFilename(info.streamerName)
 	info.title = sanitizeFilename(info.title)
@@ -398,7 +401,10 @@ func extractAvatarURL(body string) string {
 			return normalizeImageURL(match[1])
 		}
 	}
+	return ""
+}
 
+func extractCoverURL(body string) string {
 	for _, target := range []struct {
 		attr string
 		name string

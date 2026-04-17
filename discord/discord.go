@@ -34,6 +34,14 @@ type Notifier struct {
 	startTime time.Time
 	mu        sync.Mutex
 	stopChan  chan struct{}
+
+	archiveMessages map[string]archiveMessageState
+}
+
+type archiveMessageState struct {
+	channelID string
+	messageID string
+	embed     embed
 }
 
 // NewNotifierFromConfig creates a Notifier for the given screen-id.
@@ -50,6 +58,7 @@ func NewNotifierFromConfig(cfg Config, screenID string) *Notifier {
 		tagRole:          cfg.TagRole,
 		screenID:         screenID,
 		stopChan:         make(chan struct{}),
+		archiveMessages:  make(map[string]archiveMessageState),
 	}
 }
 
@@ -103,6 +112,7 @@ type embed struct {
 	Color     int     `json:"color"`
 	Author    *author `json:"author,omitempty"`
 	Thumbnail *image  `json:"thumbnail,omitempty"`
+	Image     *image  `json:"image,omitempty"`
 	Fields    []field `json:"fields"`
 	Footer    *footer `json:"footer,omitempty"`
 	Timestamp string  `json:"timestamp,omitempty"`
@@ -147,7 +157,6 @@ func buildStartEmbed(session record.SessionInfo, elapsed time.Duration) embed {
 	fields := []field{
 		{Name: "直播狀態", Value: "🔴 **正在錄影中**", Inline: true},
 		{Name: "錄影時長", Value: fmt.Sprintf("⏱️ **%s**（持續更新）", formatDuration(elapsed)), Inline: true},
-		{Name: "直播頁面", Value: fmt.Sprintf("[點我前往直播間](%s)", streamURL), Inline: false},
 	}
 	return embed{
 		Title:     FormatTitle(session.StreamerName, session.Title),
@@ -155,25 +164,27 @@ func buildStartEmbed(session record.SessionInfo, elapsed time.Duration) embed {
 		Color:     colorLive,
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
+		Image:     buildEmbedImage(session.CoverURL),
 		Fields:    fields,
 		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
-func buildEndEmbed(session record.SessionInfo, elapsed time.Duration) embed {
+func buildEndEmbed(session record.SessionInfo, elapsed time.Duration, telegramURL string) embed {
 	streamURL := buildStreamURL(session.Streamer)
 	fields := []field{
 		{Name: "直播狀態", Value: "⏹️ **錄影已結束**", Inline: true},
 		{Name: "總錄影時長", Value: fmt.Sprintf("⏱️ **%s**", formatDuration(elapsed)), Inline: true},
-		{Name: "直播頁面", Value: fmt.Sprintf("[點我查看直播主頁](%s)", streamURL), Inline: false},
 	}
+	fields = withTelegramArchiveField(fields, telegramURL)
 	return embed{
 		Title:     FormatTitle(session.StreamerName, session.Title),
 		Url:       streamURL,
 		Color:     colorArchive,
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
+		Image:     buildEmbedImage(session.CoverURL),
 		Fields:    fields,
 		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -188,10 +199,10 @@ func buildMemberOnlyStartEmbed(session record.SessionInfo) embed {
 		Color:     colorLive,
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
+		Image:     buildEmbedImage(session.CoverURL),
 		Fields: []field{
 			{Name: "直播狀態", Value: "🔒 **會員限定直播**", Inline: true},
 			{Name: "錄製狀態", Value: "🚫 **未嘗試錄製**", Inline: true},
-			{Name: "直播頁面", Value: fmt.Sprintf("[點我前往直播間](%s)", streamURL), Inline: false},
 		},
 		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -206,10 +217,10 @@ func buildMemberOnlyEndEmbed(session record.SessionInfo) embed {
 		Color:     colorArchive,
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
+		Image:     buildEmbedImage(session.CoverURL),
 		Fields: []field{
 			{Name: "直播狀態", Value: "🗂️ **會員限定直播已結束**", Inline: true},
 			{Name: "錄製狀態", Value: "🚫 **未錄製**", Inline: true},
-			{Name: "直播頁面", Value: fmt.Sprintf("[點我查看直播主頁](%s)", streamURL), Inline: false},
 		},
 		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -235,12 +246,42 @@ func buildEmbedThumbnail(avatarURL string) *image {
 	return &image{Url: avatarURL}
 }
 
+func buildEmbedImage(coverURL string) *image {
+	if strings.TrimSpace(coverURL) == "" {
+		return nil
+	}
+	return &image{Url: coverURL}
+}
+
+func withTelegramArchiveField(fields []field, telegramURL string) []field {
+	next := make([]field, 0, len(fields)+1)
+	for _, item := range fields {
+		if item.Name == "錄播檔案" {
+			continue
+		}
+		next = append(next, item)
+	}
+	if strings.TrimSpace(telegramURL) == "" {
+		return next
+	}
+	next = append(next, field{
+		Name:   "錄播檔案",
+		Value:  fmt.Sprintf("[點我打開 Telegram 錄播檔](%s)", telegramURL),
+		Inline: false,
+	})
+	return next
+}
+
 func formatAuthorName(session record.SessionInfo) string {
 	name := strings.TrimSpace(session.StreamerName)
 	if name == "" || name == session.Streamer {
 		return "@" + session.Streamer
 	}
 	return fmt.Sprintf("%s (@%s)", name, session.Streamer)
+}
+
+func archiveSessionKey(session record.SessionInfo) string {
+	return fmt.Sprintf("%s|%d", strings.TrimSpace(session.Filename), session.StartedAt.UnixNano())
 }
 
 // ── Notifier internal helpers ────────────────────────────────────────────────
@@ -472,17 +513,23 @@ func (n *Notifier) NotifyEnd(session record.SessionInfo) {
 	defer n.mu.Unlock()
 
 	elapsed := time.Since(n.startTime)
-	endEmbed := buildEndEmbed(session, elapsed)
+	endEmbed := buildEndEmbed(session, elapsed, "")
 	originalMsgID := n.messageID
+	sessionKey := archiveSessionKey(session)
 
 	// Remove from the global message map before deleting the message
 	RemoveMessageMapping(originalMsgID)
 
 	// 1. Send ended embed to archive channel (no role mention on archive)
 	if n.archiveChannelID != "" {
-		if _, err := n.sendMessageToChannel(n.archiveChannelID, "", endEmbed); err != nil {
+		if archiveMsgID, err := n.sendMessageToChannel(n.archiveChannelID, "", endEmbed); err != nil {
 			log.Printf("[Discord] Failed to send archive notification: %v\n", err)
 		} else {
+			n.archiveMessages[sessionKey] = archiveMessageState{
+				channelID: n.archiveChannelID,
+				messageID: archiveMsgID,
+				embed:     endEmbed,
+			}
 			log.Printf("[Discord] Archive notification sent to channel %s\n", n.archiveChannelID)
 		}
 	}
@@ -496,4 +543,32 @@ func (n *Notifier) NotifyEnd(session record.SessionInfo) {
 		}
 		n.messageID = ""
 	}
+}
+
+// 把 Telegram 归档链接补回同一条归档消息，避免频道里再多发一条通知。
+func (n *Notifier) UpdateArchiveWithTelegramLink(session record.SessionInfo, telegramURL string) error {
+	if n == nil || strings.TrimSpace(telegramURL) == "" {
+		return nil
+	}
+
+	sessionKey := archiveSessionKey(session)
+
+	n.mu.Lock()
+	state, ok := n.archiveMessages[sessionKey]
+	n.mu.Unlock()
+	if !ok || state.messageID == "" || state.channelID == "" {
+		return nil
+	}
+
+	updated := state.embed
+	updated.Fields = withTelegramArchiveField(updated.Fields, telegramURL)
+	if err := n.editMessage(state.channelID, state.messageID, updated); err != nil {
+		return err
+	}
+
+	n.mu.Lock()
+	state.embed = updated
+	n.archiveMessages[sessionKey] = state
+	n.mu.Unlock()
+	return nil
 }

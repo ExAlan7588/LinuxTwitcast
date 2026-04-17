@@ -38,7 +38,7 @@ func TestAppendPasswordToken(t *testing.T) {
 	}
 }
 
-func TestParseStreamPageInfoExtractsAvatarURL(t *testing.T) {
+func TestParseStreamPageInfoSeparatesAvatarAndCover(t *testing.T) {
 	body := `
 		<html>
 			<head>
@@ -65,9 +65,12 @@ func TestParseStreamPageInfoExtractsAvatarURL(t *testing.T) {
 	if info.avatarURL != "https://imagegw02.twitcasting.tv/profile-avatar.jpg" {
 		t.Fatalf("avatarURL = %q, want %q", info.avatarURL, "https://imagegw02.twitcasting.tv/profile-avatar.jpg")
 	}
+	if info.coverURL != "https://imagegw03.twitcasting.tv/stream-cover.jpg" {
+		t.Fatalf("coverURL = %q, want %q", info.coverURL, "https://imagegw03.twitcasting.tv/stream-cover.jpg")
+	}
 }
 
-func TestParseStreamPageInfoFallsBackToMetaImage(t *testing.T) {
+func TestParseStreamPageInfoKeepsCoverWhenAvatarMissing(t *testing.T) {
 	body := `
 		<html>
 			<head>
@@ -79,8 +82,11 @@ func TestParseStreamPageInfoFallsBackToMetaImage(t *testing.T) {
 	`
 
 	info := parseStreamPageInfo("test_user", body)
-	if info.avatarURL != "https://imagegw03.twitcasting.tv/stream-cover.jpg" {
-		t.Fatalf("avatarURL = %q, want %q", info.avatarURL, "https://imagegw03.twitcasting.tv/stream-cover.jpg")
+	if info.avatarURL != "" {
+		t.Fatalf("avatarURL = %q, want empty avatar when only cover meta exists", info.avatarURL)
+	}
+	if info.coverURL != "https://imagegw03.twitcasting.tv/stream-cover.jpg" {
+		t.Fatalf("coverURL = %q, want %q", info.coverURL, "https://imagegw03.twitcasting.tv/stream-cover.jpg")
 	}
 }
 

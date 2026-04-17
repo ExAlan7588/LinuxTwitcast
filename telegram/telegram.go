@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,27 @@ type Config struct {
 
 type UploadMethod string
 
+type UploadResult struct {
+	Method     UploadMethod
+	MessageURL string
+}
+
+type telegramAPIResponse struct {
+	OK          bool            `json:"ok"`
+	Description string          `json:"description"`
+	Result      telegramMessage `json:"result"`
+}
+
+type telegramMessage struct {
+	MessageID int64        `json:"message_id"`
+	Chat      telegramChat `json:"chat"`
+}
+
+type telegramChat struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+}
+
 const (
 	UploadMethodAudio    UploadMethod = "audio"
 	UploadMethodDocument UploadMethod = "document"
@@ -37,7 +59,7 @@ var (
 	runFFmpeg = func(args ...string) ([]byte, error) {
 		return exec.Command("ffmpeg", args...).CombinedOutput()
 	}
-	uploadTelegramFile = UploadFile
+	uploadTelegramFile = UploadFileWithResult
 )
 
 func LoadConfig() Config {
@@ -63,16 +85,16 @@ func SaveConfig(cfg Config) error {
 }
 
 // Process handles post-recording task. Runs synchronously so run in a goroutine.
-func Process(cfg Config, session record.SessionInfo) {
+func Process(cfg Config, session record.SessionInfo) UploadResult {
 	if !cfg.Enabled || cfg.BotToken == "" || cfg.ChatID == "" {
-		return
+		return UploadResult{}
 	}
 
 	targetFile := session.Filename
 	// 1. Convert to M4A if needed
 	if cfg.ConvertToM4A {
 		m4aFile := taggedM4APath(session)
-		coverFile, cleanupCover, err := downloadCoverArt(session.AvatarURL)
+		coverFile, cleanupCover, err := downloadCoverArt(sessionCoverArtURL(session))
 		if err != nil {
 			log.Printf("[Telegram] Failed downloading cover art: %v", err)
 		}
@@ -84,7 +106,7 @@ func Process(cfg Config, session record.SessionInfo) {
 		out, err := runFFmpeg(buildM4AArgs(session, targetFile, m4aFile, coverFile)...)
 		if err != nil {
 			log.Printf("[Telegram] FFmpeg extraction failed: %v\nOutput: %s", err, string(out))
-			return
+			return UploadResult{}
 		} else {
 			log.Printf("[Telegram] FFmpeg extraction successful")
 			targetFile = m4aFile
@@ -97,12 +119,14 @@ func Process(cfg Config, session record.SessionInfo) {
 
 	// 2. Upload to Telegram
 	log.Printf("[Telegram] Uploading %s to Telegram Chat %s", targetFile, cfg.ChatID)
-	err := uploadTelegramFile(cfg, targetFile, telegramCaption(session))
+	result, err := uploadTelegramFile(cfg, targetFile, telegramCaption(session))
 	if err != nil {
 		log.Printf("[Telegram] Upload failed: %v\n", err)
+		return UploadResult{}
 	} else {
 		log.Printf("[Telegram] Upload successful: %s\n", targetFile)
 	}
+	return result
 }
 
 // 这里把文件名、元数据和封面统一在一个地方生成，避免 ffmpeg 参数散落在流程里难维护。
@@ -173,7 +197,14 @@ func sessionDate(session record.SessionInfo) time.Time {
 	return session.StartedAt.Local()
 }
 
-// 头像下载失败不应阻塞上传；这里尽量拿到临时图片给 ffmpeg 写 attached_pic，失败就回退成纯音频标签。
+func sessionCoverArtURL(session record.SessionInfo) string {
+	if coverURL := strings.TrimSpace(session.CoverURL); coverURL != "" {
+		return coverURL
+	}
+	return strings.TrimSpace(session.AvatarURL)
+}
+
+// 封面下载失败不应阻塞上传；这里尽量拿到临时图片给 ffmpeg 写 attached_pic，失败就回退成纯音频标签。
 func downloadCoverArt(rawURL string) (string, func(), error) {
 	coverURL := strings.TrimSpace(rawURL)
 	if coverURL == "" {
@@ -216,12 +247,18 @@ func downloadCoverArt(rawURL string) (string, func(), error) {
 }
 
 func UploadFile(cfg Config, filePath string, caption string) error {
-	return uploadFile(cfg, filePath, caption, UploadMethodAudio)
+	_, err := UploadFileWithResult(cfg, filePath, caption)
+	return err
 }
 
 func UploadManagedFile(cfg Config, filePath string, caption string) (UploadMethod, error) {
 	method := uploadMethodForPath(filePath)
-	return method, uploadFile(cfg, filePath, caption, method)
+	result, err := uploadFile(cfg, filePath, caption, method)
+	return result.Method, err
+}
+
+func UploadFileWithResult(cfg Config, filePath string, caption string) (UploadResult, error) {
+	return uploadFile(cfg, filePath, caption, UploadMethodAudio)
 }
 
 func SendTestMessage(cfg Config, text string) error {
@@ -265,10 +302,12 @@ func uploadMethodForPath(filePath string) UploadMethod {
 	}
 }
 
-func uploadFile(cfg Config, filePath string, caption string, method UploadMethod) error {
+func uploadFile(cfg Config, filePath string, caption string, method UploadMethod) (UploadResult, error) {
+	result := UploadResult{Method: method}
+
 	file, err := os.Open(filePath)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer file.Close()
 
@@ -296,23 +335,35 @@ func uploadFile(cfg Config, filePath string, caption string, method UploadMethod
 	url := fmt.Sprintf("%s/bot%s/%s", strings.TrimRight(apiEndpoint(cfg.ApiEndpoint), "/"), cfg.BotToken, uploadMethodEndpoint(method))
 	req, err := http.NewRequest("POST", url, pr)
 	if err != nil {
-		return err
+		return result, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer resp.Body.Close()
 
+	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("bad status %d: %s", resp.StatusCode, string(respBody))
+		return result, fmt.Errorf("bad status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	return nil
+	var payload telegramAPIResponse
+	if err := json.Unmarshal(respBody, &payload); err != nil {
+		return result, nil
+	}
+	if !payload.OK {
+		if strings.TrimSpace(payload.Description) != "" {
+			return result, fmt.Errorf("telegram api error: %s", payload.Description)
+		}
+		return result, fmt.Errorf("telegram api returned ok=false")
+	}
+
+	result.MessageURL = telegramMessageURL(payload.Result.Chat, payload.Result.MessageID)
+	return result, nil
 }
 
 func uploadFieldName(method UploadMethod) string {
@@ -334,4 +385,22 @@ func apiEndpoint(raw string) string {
 		return "https://api.telegram.org"
 	}
 	return raw
+}
+
+func telegramMessageURL(chat telegramChat, messageID int64) string {
+	if messageID <= 0 {
+		return ""
+	}
+
+	username := strings.TrimSpace(chat.Username)
+	if username != "" {
+		return fmt.Sprintf("https://t.me/%s/%d", username, messageID)
+	}
+
+	chatID := strconv.FormatInt(chat.ID, 10)
+	if strings.HasPrefix(chatID, "-100") {
+		return fmt.Sprintf("https://t.me/c/%s/%d", strings.TrimPrefix(chatID, "-100"), messageID)
+	}
+
+	return ""
 }

@@ -91,6 +91,7 @@ func TestBuildM4AArgsIncludesMetadataAndCover(t *testing.T) {
 		StreamerName: "測試主播",
 		Title:        "今晚雜談",
 		StartedAt:    time.Date(2026, 4, 14, 9, 0, 0, 0, time.UTC),
+		CoverURL:     "https://example.test/cover.jpg",
 	}
 
 	args := buildM4AArgs(session, session.Filename, `C:\recordings\out.m4a`, `C:\temp\cover.jpg`)
@@ -130,9 +131,9 @@ func TestProcessSkipsUploadWhenFFmpegFails(t *testing.T) {
 	runFFmpeg = func(args ...string) ([]byte, error) {
 		return []byte("ffmpeg failed"), errors.New("boom")
 	}
-	uploadTelegramFile = func(cfg Config, filePath string, caption string) error {
+	uploadTelegramFile = func(cfg Config, filePath string, caption string) (UploadResult, error) {
 		uploadCalls++
-		return nil
+		return UploadResult{}, nil
 	}
 
 	Process(Config{
@@ -152,5 +153,45 @@ func TestProcessSkipsUploadWhenFFmpegFails(t *testing.T) {
 	}
 	if _, err := os.Stat(sourceFile); err != nil {
 		t.Fatalf("expected original file to remain after ffmpeg failure, stat err: %v", err)
+	}
+}
+
+func TestUploadFileWithResultReturnsMessageURL(t *testing.T) {
+	tempDir := t.TempDir()
+	audioFile := filepath.Join(tempDir, "recording.m4a")
+	if err := os.WriteFile(audioFile, []byte("dummy"), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(4 << 20); err != nil {
+			t.Fatalf("ParseMultipartForm: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":321,"chat":{"id":-1001234567890,"username":"archive_channel"}}}`))
+	}))
+	defer server.Close()
+
+	result, err := UploadFileWithResult(Config{
+		BotToken:    "bot-token",
+		ChatID:      "-1001234567890",
+		ApiEndpoint: server.URL,
+	}, audioFile, "caption")
+	if err != nil {
+		t.Fatalf("UploadFileWithResult returned error: %v", err)
+	}
+
+	if result.Method != UploadMethodAudio {
+		t.Fatalf("method = %q, want %q", result.Method, UploadMethodAudio)
+	}
+	if result.MessageURL != "https://t.me/archive_channel/321" {
+		t.Fatalf("messageURL = %q, want %q", result.MessageURL, "https://t.me/archive_channel/321")
+	}
+}
+
+func TestTelegramMessageURLSupportsPrivateChat(t *testing.T) {
+	got := telegramMessageURL(telegramChat{ID: -100987654321}, 456)
+	if got != "https://t.me/c/987654321/456" {
+		t.Fatalf("telegramMessageURL() = %q, want %q", got, "https://t.me/c/987654321/456")
 	}
 }

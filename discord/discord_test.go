@@ -14,6 +14,7 @@ func TestBuildStartEmbedUsesPlainRedDotStatus(t *testing.T) {
 		StreamerName: "主播",
 		Title:        "title",
 		AvatarURL:    "https://example.com/avatar.jpg",
+		CoverURL:     "https://example.com/cover.jpg",
 	}, 5*time.Second)
 	if len(embed.Fields) == 0 {
 		t.Fatal("expected status fields in start embed")
@@ -28,5 +29,35 @@ func TestBuildStartEmbedUsesPlainRedDotStatus(t *testing.T) {
 	}
 	if embed.Thumbnail == nil || embed.Thumbnail.Url != "https://example.com/avatar.jpg" {
 		t.Fatalf("expected thumbnail avatar to be set, got %+v", embed.Thumbnail)
+	}
+	if embed.Image == nil || embed.Image.Url != "https://example.com/cover.jpg" {
+		t.Fatalf("expected cover image to be set, got %+v", embed.Image)
+	}
+	for _, field := range embed.Fields {
+		if field.Name == "直播頁面" {
+			t.Fatalf("expected live page field to be removed, got %+v", embed.Fields)
+		}
+	}
+}
+
+func TestBuildEndEmbedAddsTelegramArchiveLink(t *testing.T) {
+	embed := buildEndEmbed(record.SessionInfo{
+		Streamer:     "screen-id",
+		StreamerName: "主播",
+		Title:        "title",
+		AvatarURL:    "https://example.com/avatar.jpg",
+		CoverURL:     "https://example.com/cover.jpg",
+	}, 38*time.Second, "https://t.me/archive/123")
+
+	if embed.Image == nil || embed.Image.Url != "https://example.com/cover.jpg" {
+		t.Fatalf("expected cover image to be set, got %+v", embed.Image)
+	}
+
+	lastField := embed.Fields[len(embed.Fields)-1]
+	if lastField.Name != "錄播檔案" {
+		t.Fatalf("expected archive link field at the bottom, got %+v", embed.Fields)
+	}
+	if !strings.Contains(lastField.Value, "https://t.me/archive/123") {
+		t.Fatalf("expected telegram link in archive field, got %q", lastField.Value)
 	}
 }
