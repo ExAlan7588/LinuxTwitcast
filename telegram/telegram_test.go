@@ -193,7 +193,7 @@ func TestProcessRetriesConversionStrategiesAfterCopyFailure(t *testing.T) {
 }
 
 func TestConvertManagedMediaFileRejectsUnsupportedExtension(t *testing.T) {
-	if _, err := ConvertManagedMediaFile("recording.mp3"); err == nil {
+	if _, err := ConvertManagedMediaFile(record.SessionInfo{}, "recording.mp3"); err == nil {
 		t.Fatal("expected non-ts conversion to fail")
 	}
 }
@@ -213,12 +213,49 @@ func TestConvertManagedMediaFileAcceptsMP4(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	outputFile, err := ConvertManagedMediaFile(inputFile)
+	outputFile, err := ConvertManagedMediaFile(record.SessionInfo{}, inputFile)
 	if err != nil {
 		t.Fatalf("ConvertManagedMediaFile() error = %v", err)
 	}
 	if outputFile != filepath.Join(tempDir, "recording.m4a") {
 		t.Fatalf("outputFile = %q", outputFile)
+	}
+}
+
+func TestConvertManagedMediaFileUsesProvidedAvatarSession(t *testing.T) {
+	originalRunFFmpeg := runFFmpeg
+	runFFmpeg = func(args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if !strings.Contains(joined, "-map 1:v:0") || !strings.Contains(joined, "-disposition:v:0 attached_pic") {
+			t.Fatalf("expected attached avatar artwork args, got %q", joined)
+		}
+		return []byte("ok"), nil
+	}
+	t.Cleanup(func() {
+		runFFmpeg = originalRunFFmpeg
+	})
+
+	avatarServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/avatar.jpg" {
+			t.Fatalf("unexpected cover request path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("jpeg"))
+	}))
+	defer avatarServer.Close()
+
+	tempDir := t.TempDir()
+	inputFile := filepath.Join(tempDir, "recording.mp4")
+	if err := os.WriteFile(inputFile, []byte("dummy"), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ConvertManagedMediaFile(record.SessionInfo{
+		StreamerName: "ミエル",
+		AvatarURL:    avatarServer.URL + "/avatar.jpg",
+		CoverURL:     "https://example.test/stream-cover.jpg",
+	}, inputFile); err != nil {
+		t.Fatalf("ConvertManagedMediaFile() error = %v", err)
 	}
 }
 

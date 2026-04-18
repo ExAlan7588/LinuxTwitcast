@@ -22,6 +22,7 @@ import (
 	"github.com/jzhang046/croned-twitcasting-recorder/applog"
 	"github.com/jzhang046/croned-twitcasting-recorder/config"
 	"github.com/jzhang046/croned-twitcasting-recorder/discord"
+	"github.com/jzhang046/croned-twitcasting-recorder/record"
 	"github.com/jzhang046/croned-twitcasting-recorder/service"
 	"github.com/jzhang046/croned-twitcasting-recorder/telegram"
 	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
@@ -780,7 +781,7 @@ func (s *Server) handleFileConvertM4A(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, targetFile, _, err := s.resolvePath(req.Root, req.Path)
+	_, targetFile, relativePath, err := s.resolvePath(req.Root, req.Path)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, err)
 		return
@@ -806,7 +807,7 @@ func (s *Server) handleFileConvertM4A(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outputFile, err := convertManagedMediaFile(targetFile)
+	outputFile, err := convertManagedMediaFile(s.buildManagedConversionSession(targetFile, relativePath), targetFile)
 	if err != nil {
 		s.writeError(w, http.StatusBadGateway, err)
 		return
@@ -847,6 +848,92 @@ func (s *Server) resolvePath(requestedRoot, requestedPath string) (string, strin
 	}
 
 	return rootAbs, targetAbs, relativePath, nil
+}
+
+func (s *Server) buildManagedConversionSession(targetFile, relativePath string) record.SessionInfo {
+	session := record.SessionInfo{
+		Filename: targetFile,
+	}
+	if info, err := os.Stat(targetFile); err == nil {
+		session.StartedAt = info.ModTime()
+	}
+
+	screenID := s.findManagedConversionScreenID(relativePath)
+	if screenID == "" {
+		return session
+	}
+
+	session.Streamer = screenID
+	profile, err := lookupStreamerProfile(screenID)
+	if err != nil {
+		return session
+	}
+
+	session.StreamerName = strings.TrimSpace(profile.StreamerName)
+	session.AvatarURL = strings.TrimSpace(profile.AvatarURL)
+	return session
+}
+
+func (s *Server) findManagedConversionScreenID(relativePath string) string {
+	cfg, err := config.Load(filepath.Join(s.options.RootDir, "config.json"))
+	if err == nil {
+		bestPrefix := ""
+		bestScreenID := ""
+		normalizedPath := normalizeManagedRelativePath(relativePath)
+		for _, streamerCfg := range cfg.Streamers {
+			if streamerCfg == nil {
+				continue
+			}
+			folderPrefix := normalizeManagedFolderPrefix(streamerCfg.Folder)
+			if folderPrefix == "" || !managedPathHasPrefix(normalizedPath, folderPrefix) {
+				continue
+			}
+			if len(folderPrefix) > len(bestPrefix) {
+				bestPrefix = folderPrefix
+				bestScreenID = strings.TrimSpace(streamerCfg.ScreenId)
+			}
+		}
+		if bestScreenID != "" {
+			return bestScreenID
+		}
+	}
+
+	segments := strings.Split(normalizeManagedRelativePath(relativePath), "/")
+	if len(segments) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(segments[0])
+}
+
+func normalizeManagedRelativePath(relativePath string) string {
+	normalized := strings.Trim(filepath.ToSlash(filepath.Clean(strings.TrimSpace(relativePath))), "/")
+	if normalized == "." {
+		return ""
+	}
+	return normalized
+}
+
+func normalizeManagedFolderPrefix(folder string) string {
+	normalized := normalizeManagedRelativePath(folder)
+	switch {
+	case strings.HasPrefix(normalized, "Recordings/"):
+		return strings.TrimPrefix(normalized, "Recordings/")
+	case strings.HasPrefix(normalized, "Recording/"):
+		return strings.TrimPrefix(normalized, "Recording/")
+	case strings.EqualFold(normalized, "Recordings"), strings.EqualFold(normalized, "Recording"):
+		return ""
+	default:
+		return normalized
+	}
+}
+
+func managedPathHasPrefix(relativePath, folderPrefix string) bool {
+	if relativePath == "" || folderPrefix == "" {
+		return false
+	}
+	left := strings.ToLower(relativePath)
+	right := strings.ToLower(folderPrefix)
+	return left == right || strings.HasPrefix(left, right+"/")
 }
 
 func (s *Server) buildDiagnostics(app config.AppConfig, telegramCfg telegram.Config, status service.Status, ffmpegPath string) []Diagnostic {

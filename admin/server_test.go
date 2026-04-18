@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/jzhang046/croned-twitcasting-recorder/applog"
+	"github.com/jzhang046/croned-twitcasting-recorder/config"
+	"github.com/jzhang046/croned-twitcasting-recorder/record"
 	"github.com/jzhang046/croned-twitcasting-recorder/service"
 	"github.com/jzhang046/croned-twitcasting-recorder/telegram"
 	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
@@ -236,7 +238,7 @@ func TestHandleFileConvertM4AConvertsTSFiles(t *testing.T) {
 	}
 
 	originalConvertManagedMediaFile := convertManagedMediaFile
-	convertManagedMediaFile = func(filePath string) (string, error) {
+	convertManagedMediaFile = func(session record.SessionInfo, filePath string) (string, error) {
 		if filePath != tempFile {
 			t.Fatalf("unexpected conversion path: %s", filePath)
 		}
@@ -283,7 +285,7 @@ func TestHandleFileConvertM4AConvertsMP4Files(t *testing.T) {
 	}
 
 	originalConvertManagedMediaFile := convertManagedMediaFile
-	convertManagedMediaFile = func(filePath string) (string, error) {
+	convertManagedMediaFile = func(session record.SessionInfo, filePath string) (string, error) {
 		if filePath != tempFile {
 			t.Fatalf("unexpected conversion path: %s", filePath)
 		}
@@ -315,6 +317,90 @@ func TestHandleFileConvertM4AConvertsMP4Files(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), "\"output\":\"sample.m4a\"") {
 		t.Fatalf("expected output file in response, got %s", recorder.Body.String())
+	}
+}
+
+func TestHandleFileConvertM4AUsesStreamerAvatarWhenFolderMatchesConfig(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	recordingsRoot := filepath.Join(rootDir, "Recordings")
+	targetDir := filepath.Join(recordingsRoot, "mielu")
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	tempFile := filepath.Join(targetDir, "sample.ts")
+	if err := os.WriteFile(tempFile, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+	if err := config.Save(filepath.Join(rootDir, "config.json"), &config.AppConfig{
+		Lang: "ZH",
+		Streamers: []*config.StreamerConfig{
+			{
+				ScreenId: "mielu_ii",
+				Schedule: "@every 5s",
+				Folder:   "Recordings/mielu",
+				Enabled:  true,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	originalLookup := lookupStreamerProfile
+	lookupStreamerProfile = func(screenID string) (twitcasting.StreamerProfile, error) {
+		if screenID != "mielu_ii" {
+			t.Fatalf("unexpected screenID: %s", screenID)
+		}
+		return twitcasting.StreamerProfile{
+			ScreenID:     "mielu_ii",
+			StreamerName: "ミエル",
+			AvatarURL:    "https://example.test/avatar.jpg",
+		}, nil
+	}
+	t.Cleanup(func() {
+		lookupStreamerProfile = originalLookup
+	})
+
+	originalConvertManagedMediaFile := convertManagedMediaFile
+	convertManagedMediaFile = func(session record.SessionInfo, filePath string) (string, error) {
+		if filePath != tempFile {
+			t.Fatalf("unexpected conversion path: %s", filePath)
+		}
+		if session.Streamer != "mielu_ii" {
+			t.Fatalf("session.Streamer = %q", session.Streamer)
+		}
+		if session.StreamerName != "ミエル" {
+			t.Fatalf("session.StreamerName = %q", session.StreamerName)
+		}
+		if session.AvatarURL != "https://example.test/avatar.jpg" {
+			t.Fatalf("session.AvatarURL = %q", session.AvatarURL)
+		}
+		return filepath.Join(targetDir, "sample.m4a"), nil
+	}
+	t.Cleanup(func() {
+		convertManagedMediaFile = originalConvertManagedMediaFile
+	})
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body, err := json.Marshal(map[string]string{
+		"root": recordingsRoot,
+		"path": "mielu/sample.ts",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/files/convert-m4a", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

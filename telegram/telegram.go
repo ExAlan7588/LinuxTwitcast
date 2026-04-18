@@ -126,7 +126,7 @@ func Process(cfg Config, session record.SessionInfo) UploadResult {
 	return result
 }
 
-func ConvertManagedMediaFile(filePath string) (string, error) {
+func ConvertManagedMediaFile(session record.SessionInfo, filePath string) (string, error) {
 	switch strings.ToLower(filepath.Ext(filePath)) {
 	case ".ts", ".mp4":
 	default:
@@ -134,16 +134,29 @@ func ConvertManagedMediaFile(filePath string) (string, error) {
 	}
 
 	outputFile := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".m4a"
-	session := record.SessionInfo{
-		Filename:  filePath,
-		Title:     strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath)),
-		StartedAt: time.Now(),
-	}
+	session = normalizeManagedConversionSession(session, filePath)
 
 	if err := ConvertFileToM4A(session, filePath, outputFile); err != nil {
 		return "", err
 	}
 	return outputFile, nil
+}
+
+func normalizeManagedConversionSession(session record.SessionInfo, filePath string) record.SessionInfo {
+	if strings.TrimSpace(session.Filename) == "" {
+		session.Filename = filePath
+	}
+	if strings.TrimSpace(session.Title) == "" {
+		session.Title = strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
+	}
+	if session.StartedAt.IsZero() {
+		if info, err := os.Stat(filePath); err == nil {
+			session.StartedAt = info.ModTime()
+		} else {
+			session.StartedAt = time.Now()
+		}
+	}
+	return session
 }
 
 func ConvertFileToM4A(session record.SessionInfo, inputFile, outputFile string) error {
