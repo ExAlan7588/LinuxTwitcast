@@ -207,6 +207,67 @@ func TestGetWSStreamUrlWithPasswordPrefersMoviePageTitle(t *testing.T) {
 	}
 }
 
+func TestGetWSStreamUrlWithPasswordUsesMoviePageMemberOnlyMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/locked_user":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`
+				<html>
+					<head>
+						<title>♡ - 鎖定主播 (@locked_user) - TwitCasting</title>
+						<meta name="twitter:title" content="♡">
+						<meta content="//imagegw03.twitcasting.tv/home-cover.jpg" property="og:image">
+					</head>
+				</html>
+			`))
+		case "/locked_user/movie/900001":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`
+				<html>
+					<head>
+						<title>メン限本編 / つづき - 鎖定主播 (@locked_user) - TwitCasting</title>
+						<meta name="twitter:title" content="メン限本編 / つづき">
+						<meta content="//imagegw03.twitcasting.tv/member-cover.jpg" property="og:image">
+					</head>
+					<body>
+						<div class="tw-player-page-lock-empty-state">
+							<div>Members-only</div>
+							<a href="/membershipjoinplans.php?u=locked_user">Join the membership</a>
+						</div>
+						<div data-broadcaster-profile-image="//imagegw02.twitcasting.tv/member-avatar.jpg"></div>
+					</body>
+				</html>
+			`))
+		case "/streamserver.php":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"movie": {"live": true, "id": "900001"},
+				"llfmp4": {"streams": {"main": "wss://stream.example/live"}}
+			}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	useTwitCastingTestHTTPClient(t, server)
+
+	result, err := GetWSStreamUrlWithPassword("locked_user", "")
+	if !errors.Is(err, ErrMemberOnlyLive) {
+		t.Fatalf("GetWSStreamUrlWithPassword() error = %v, want %v", err, ErrMemberOnlyLive)
+	}
+	if result.Title != "メン限本編 ／ つづき" {
+		t.Fatalf("Title = %q, want %q", result.Title, "メン限本編 ／ つづき")
+	}
+	if result.CoverURL != "https://imagegw03.twitcasting.tv/member-cover.jpg" {
+		t.Fatalf("CoverURL = %q, want %q", result.CoverURL, "https://imagegw03.twitcasting.tv/member-cover.jpg")
+	}
+	if result.AvatarURL != "https://imagegw02.twitcasting.tv/member-avatar.jpg" {
+		t.Fatalf("AvatarURL = %q, want %q", result.AvatarURL, "https://imagegw02.twitcasting.tv/member-avatar.jpg")
+	}
+}
+
 func useTwitCastingTestHTTPClient(t *testing.T, server *httptest.Server) {
 	t.Helper()
 

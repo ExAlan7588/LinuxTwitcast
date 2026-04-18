@@ -43,6 +43,7 @@ type RecordConfig struct {
 
 type StreamLookupResult struct {
 	StreamURL    string
+	MovieID      string
 	StreamerName string
 	Title        string
 	AvatarURL    string

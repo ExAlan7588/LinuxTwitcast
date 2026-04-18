@@ -6,7 +6,7 @@ const LANG_STORAGE_KEY = "twitcast-ui-lang";
 const langState = { value: "EN" };
 const themeState = { value: "dark" };
 const logState = { lines: [], hideOffline: true, filteredCount: 0, loaded: false };
-const appState = { status: null, files: null, streamers: [] };
+const appState = { status: null, files: null, streamers: [], twitcastingAuth: {} };
 const streamerModalState = {
     index: null,
     folderTouched: false,
@@ -75,6 +75,7 @@ const I18N = {
         "settings.langChinese": "Traditional Chinese",
         "settings.mirrorLogs": "Mirror logs to `app.log`",
         "settings.twitcastingApiSection": "TwitCasting API (optional)",
+        "settings.twitcastingAuthSection": "TwitCasting Login Cookie",
         "twitcasting.clientId": "Client ID",
         "twitcasting.clientSecret": "Client Secret",
         "twitcasting.help": "Use an official TwitCasting Client ID / Client Secret for more reliable profile lookups and higher-quality avatar URLs.",
@@ -83,6 +84,20 @@ const I18N = {
         "twitcasting.apiDocsLink": "APIv2 Documentation",
         "twitcasting.clientIdHelp": "This is the public app ID for TwitCasting's official API. It only helps this console look up streamer profile data, and must be paired with Client Secret.",
         "twitcasting.clientSecretHelp": "This is the private key paired with the Client ID. Leave both fields empty if you do not use the official API, and do not share this secret publicly.",
+        "twitcasting.authHelp": "Upload a browser-exported cookie so this recorder can access members-only lives with your signed-in session.",
+        "twitcasting.cookieFile": "Cookie File",
+        "twitcasting.cookieText": "Cookie Text",
+        "twitcasting.cookieFileHelp": "Upload a Netscape cookie file or a text file that contains a full Cookie header.",
+        "twitcasting.cookieTextHelp": "Optional fallback: paste the Cookie header here if you are not uploading a file.",
+        "twitcasting.cookieUpload": "Upload Cookie",
+        "twitcasting.cookieClear": "Clear Cookie",
+        "twitcasting.cookieMissing": "Not configured",
+        "twitcasting.cookieConfigured": "Configured ({count} cookies)",
+        "twitcasting.cookieUploading": "Uploading...",
+        "twitcasting.cookieClearing": "Clearing...",
+        "twitcasting.cookieSaved": "TwitCasting cookie saved.",
+        "twitcasting.cookieCleared": "TwitCasting cookie cleared.",
+        "twitcasting.cookieRequired": "Select a cookie file or paste cookie text first.",
         "table.enabled": "Enabled",
         "table.screenId": "Screen ID",
         "table.schedule": "Interval",
@@ -146,6 +161,14 @@ const I18N = {
         "metrics.uptime": "Uptime",
         "metrics.latestError": "Latest Error",
         "metrics.notStarted": "Not started",
+        "manual.section": "Manual Record",
+        "manual.help": "Paste a TwitCasting live or movie URL to start a one-off recording immediately. Archived movie download is not included in this first version.",
+        "manual.urlLabel": "TwitCasting URL",
+        "manual.urlHelp": "Examples: twitcasting.tv/<screen-id> or twitcasting.tv/<screen-id>/movie/<movie-id>",
+        "manual.urlRequired": "A TwitCasting URL is required.",
+        "manual.start": "Start Manual Record",
+        "manual.starting": "Starting...",
+        "manual.started": "{name} / {title} was queued for recording.",
         "streamers.none": "No streamers are configured yet. Use \"Add Streamer\" to create one.",
         "streamers.passwordSet": "Configured",
         "streamers.passwordMissing": "Not set",
@@ -243,6 +266,7 @@ const I18N = {
         "settings.langChinese": "繁體中文",
         "settings.mirrorLogs": "同步寫入 `app.log`",
         "settings.twitcastingApiSection": "TwitCasting API（選填）",
+        "settings.twitcastingAuthSection": "TwitCasting 登入 Cookie",
         "twitcasting.clientId": "Client ID",
         "twitcasting.clientSecret": "Client Secret",
         "twitcasting.help": "填入官方 TwitCasting Client ID / Client Secret 後，直播主資料查詢會更穩定，大頭貼網址也會盡量升級成較高畫質。",
@@ -251,6 +275,20 @@ const I18N = {
         "twitcasting.apiDocsLink": "查看 APIv2 文件",
         "twitcasting.clientIdHelp": "這是 TwitCasting 官方 API 的應用程式識別碼，只用來查直播主資料，必須和 Client Secret 成對填寫。",
         "twitcasting.clientSecretHelp": "這是和 Client ID 配對的私密金鑰；如果不用官方 API，兩欄都留空即可，請不要公開這組資料。",
+        "twitcasting.authHelp": "上傳瀏覽器匯出的 cookie 後，錄影器就能帶著你的登入 session 嘗試存取會員限定直播。",
+        "twitcasting.cookieFile": "Cookie 檔案",
+        "twitcasting.cookieText": "Cookie 文字",
+        "twitcasting.cookieFileHelp": "可上傳 Netscape cookie 檔，或任何內含完整 Cookie header 的文字檔。",
+        "twitcasting.cookieTextHelp": "如果你沒有檔案，也可以直接把 Cookie header 貼在這裡。",
+        "twitcasting.cookieUpload": "上傳 Cookie",
+        "twitcasting.cookieClear": "清除 Cookie",
+        "twitcasting.cookieMissing": "尚未設定",
+        "twitcasting.cookieConfigured": "已設定（{count} 個 cookie）",
+        "twitcasting.cookieUploading": "上傳中...",
+        "twitcasting.cookieClearing": "清除中...",
+        "twitcasting.cookieSaved": "TwitCasting cookie 已儲存。",
+        "twitcasting.cookieCleared": "TwitCasting cookie 已清除。",
+        "twitcasting.cookieRequired": "請先選擇 cookie 檔案或貼上 cookie 文字。",
         "table.enabled": "啟用",
         "table.screenId": "Screen ID",
         "table.schedule": "秒數",
@@ -314,6 +352,14 @@ const I18N = {
         "metrics.uptime": "運行時間",
         "metrics.latestError": "最近錯誤",
         "metrics.notStarted": "尚未啟動",
+        "manual.section": "手動錄製",
+        "manual.help": "貼上 TwitCasting 的直播或 movie 網址後，系統會立刻建立一次性錄製工作。已結束 movie 的直接下載不在這個第一版內。",
+        "manual.urlLabel": "TwitCasting 網址",
+        "manual.urlHelp": "例如：twitcasting.tv/<screen-id> 或 twitcasting.tv/<screen-id>/movie/<movie-id>",
+        "manual.urlRequired": "請先輸入 TwitCasting 網址。",
+        "manual.start": "開始手動錄製",
+        "manual.starting": "啟動中...",
+        "manual.started": "已排入錄製：{name} / {title}。",
         "streamers.none": "目前尚未設定任何直播主，請使用「新增直播主」建立一筆。",
         "streamers.passwordSet": "已設定",
         "streamers.passwordMissing": "未設定",
@@ -394,6 +440,8 @@ function cacheElements() {
     ui.statusBadge = document.getElementById("statusBadge");
     ui.recorderSummary = document.getElementById("recorderSummary");
     ui.activeRecordings = document.getElementById("activeRecordings");
+    ui.manualRecordUrlInput = document.getElementById("manualRecordUrlInput");
+    ui.manualRecordBtn = document.getElementById("manualRecordBtn");
     ui.runtimeInfo = document.getElementById("runtimeInfo");
     ui.diagnostics = document.getElementById("diagnostics");
 
@@ -401,6 +449,11 @@ function cacheElements() {
     ui.enableLogInput = document.getElementById("enableLogInput");
     ui.twitcastingClientIdInput = document.getElementById("twitcastingClientIdInput");
     ui.twitcastingClientSecretInput = document.getElementById("twitcastingClientSecretInput");
+    ui.twitcastingCookieStatus = document.getElementById("twitcastingCookieStatus");
+    ui.twitcastingCookieFileInput = document.getElementById("twitcastingCookieFileInput");
+    ui.twitcastingCookieTextInput = document.getElementById("twitcastingCookieTextInput");
+    ui.twitcastingCookieUploadBtn = document.getElementById("twitcastingCookieUploadBtn");
+    ui.twitcastingCookieClearBtn = document.getElementById("twitcastingCookieClearBtn");
     ui.streamersBody = document.getElementById("streamersBody");
     ui.streamerGuideBtn = document.getElementById("streamerGuideBtn");
     ui.streamerModal = document.getElementById("streamerModal");
@@ -485,6 +538,7 @@ function applyLanguage(language) {
         renderFiles(appState.files);
     }
 
+    renderTwitCastingAuth(appState.twitcastingAuth || {});
     renderStreamers(appState.streamers);
     updateStreamerModalCopy();
 
@@ -496,8 +550,11 @@ function bindEvents() {
     ui.refreshBtn.addEventListener("click", () => refreshAll().catch(handleError));
     ui.saveSettingsBtn.addEventListener("click", () => saveSettings().catch(handleError));
     ui.checkVersionBtn.addEventListener("click", () => checkForUpdates().catch(handleError));
+    ui.twitcastingCookieUploadBtn.addEventListener("click", () => uploadTwitCastingCookie().catch(handleError));
+    ui.twitcastingCookieClearBtn.addEventListener("click", () => clearTwitCastingCookie().catch(handleError));
     ui.discordTestBtn.addEventListener("click", () => sendDiscordTest().catch(handleError));
     ui.telegramTestBtn.addEventListener("click", () => sendTelegramTest().catch(handleError));
+    ui.manualRecordBtn.addEventListener("click", () => startManualRecord().catch(handleError));
     ui.startRecorderBtn.addEventListener("click", () => controlRecorder("start").catch(handleError));
     ui.stopRecorderBtn.addEventListener("click", () => controlRecorder("stop").catch(handleError));
     ui.restartRecorderBtn.addEventListener("click", () => controlRecorder("restart").catch(handleError));
@@ -774,11 +831,13 @@ function renderStatus(data) {
 
 function renderSettings(settings) {
     appState.streamers = normalizeStreamers(settings.app?.streamers || []);
+    appState.twitcastingAuth = settings.twitcasting_auth || {};
     ui.langInput.value = settings.app?.lang || "EN";
     applyLanguage(ui.langInput.value);
     ui.enableLogInput.checked = Boolean(settings.app?.enable_log);
     ui.twitcastingClientIdInput.value = settings.app?.twitcasting_api?.client_id || "";
     ui.twitcastingClientSecretInput.value = settings.app?.twitcasting_api?.client_secret || "";
+    renderTwitCastingAuth(appState.twitcastingAuth);
     renderStreamers(appState.streamers);
 
     ui.discordEnabledInput.checked = Boolean(settings.discord?.enabled);
@@ -794,6 +853,16 @@ function renderSettings(settings) {
     ui.telegramEndpointInput.value = settings.telegram?.api_endpoint || "https://api.telegram.org";
     ui.telegramConvertInput.checked = Boolean(settings.telegram?.convert_to_m4a);
     ui.telegramKeepInput.checked = Boolean(settings.telegram?.keep_original);
+}
+
+function renderTwitCastingAuth(status) {
+    const configured = Boolean(status?.configured);
+    const cookieCount = Number.isFinite(status?.cookie_count) ? status.cookie_count : 0;
+    ui.twitcastingCookieStatus.className = `badge ${configured ? "running" : "muted"}`;
+    ui.twitcastingCookieStatus.textContent = configured ?
+        t("twitcasting.cookieConfigured", { count: cookieCount }) :
+        t("twitcasting.cookieMissing");
+    ui.twitcastingCookieClearBtn.disabled = !configured;
 }
 
 function renderStreamers(streamers) {
@@ -1202,6 +1271,38 @@ async function sendTelegramTest() {
     });
 }
 
+async function uploadTwitCastingCookie() {
+    await runButtonAction(ui.twitcastingCookieUploadBtn, t("twitcasting.cookieUploading"), async () => {
+        const file = ui.twitcastingCookieFileInput.files?.[0];
+        const content = file ? await file.text() : ui.twitcastingCookieTextInput.value.trim();
+        if (!content) {
+            throw new Error(t("twitcasting.cookieRequired"));
+        }
+
+        const result = await api("/api/twitcasting/auth", {
+            method: "PUT",
+            body: JSON.stringify({ content })
+        });
+
+        ui.twitcastingCookieFileInput.value = "";
+        ui.twitcastingCookieTextInput.value = "";
+        appState.twitcastingAuth = result.status || {};
+        renderTwitCastingAuth(appState.twitcastingAuth);
+        showToast(t("twitcasting.cookieSaved"));
+    });
+}
+
+async function clearTwitCastingCookie() {
+    await runButtonAction(ui.twitcastingCookieClearBtn, t("twitcasting.cookieClearing"), async () => {
+        const result = await api("/api/twitcasting/auth", { method: "DELETE" });
+        ui.twitcastingCookieFileInput.value = "";
+        ui.twitcastingCookieTextInput.value = "";
+        appState.twitcastingAuth = result.status || {};
+        renderTwitCastingAuth(appState.twitcastingAuth);
+        showToast(t("twitcasting.cookieCleared"));
+    });
+}
+
 async function checkForUpdates() {
     await runButtonAction(ui.checkVersionBtn, t("system.checking"), async () => {
         const result = await api("/api/version/check");
@@ -1297,6 +1398,27 @@ async function restartBot() {
     await api("/api/bot/restart", { method: "POST" });
     showToast(t("bot.restartRequested"));
     waitForBotRecovery();
+}
+
+async function startManualRecord() {
+    await runButtonAction(ui.manualRecordBtn, t("manual.starting"), async () => {
+        const rawURL = ui.manualRecordUrlInput.value.trim();
+        if (!rawURL) {
+            throw new Error(t("manual.urlRequired"));
+        }
+
+        const result = await api("/api/manual/record", {
+            method: "POST",
+            body: JSON.stringify({ url: rawURL })
+        });
+
+        ui.manualRecordUrlInput.value = "";
+        showToast(t("manual.started", {
+            name: result.name || result.streamer || "—",
+            title: result.title || t("status.untitledStream")
+        }));
+        await Promise.all([loadStatus(), loadLogs()]);
+    });
 }
 
 // After a bot restart the listener disappears briefly, so poll health until the web process comes back.

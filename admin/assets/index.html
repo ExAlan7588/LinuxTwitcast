@@ -50,6 +50,20 @@
                     <h3 data-i18n="status.activeRecordings">Active Recordings</h3>
                     <div id="activeRecordings" class="stack muted-text">No active recordings.</div>
                 </div>
+                <div class="subsection">
+                    <div class="section-head compact">
+                        <h3 data-i18n="manual.section">Manual Record</h3>
+                        <div class="inline-actions">
+                            <button id="manualRecordBtn" class="ghost small" type="button" data-i18n="manual.start">Start Manual Record</button>
+                        </div>
+                    </div>
+                    <label>
+                        <span data-i18n="manual.urlLabel">TwitCasting URL</span>
+                        <input id="manualRecordUrlInput" type="text" autocomplete="off" spellcheck="false" placeholder="https://twitcasting.tv/...">
+                        <small class="field-help" data-i18n="manual.urlHelp">Examples: twitcasting.tv/&lt;screen-id&gt; or twitcasting.tv/&lt;screen-id&gt;/movie/&lt;movie-id&gt;</small>
+                    </label>
+                    <p class="field-help helper-note" data-i18n="manual.help">Paste a TwitCasting live or movie URL to start a one-off recording immediately. Archived movie download is not included in this first version.</p>
+                </div>
             </article>
 
             <article class="panel">
@@ -110,6 +124,32 @@
                         <input id="twitcastingClientSecretInput" type="password" autocomplete="new-password">
                         <small class="field-help" data-i18n="twitcasting.clientSecretHelp">This is the private key paired with the Client ID. Leave both fields empty if you do not use the official API, and do not share this secret publicly.</small>
                     </label>
+                </div>
+            </div>
+
+            <div class="subsection">
+                <div class="section-head compact">
+                    <h3 data-i18n="settings.twitcastingAuthSection">TwitCasting Login Cookie</h3>
+                    <div class="inline-actions">
+                        <span id="twitcastingCookieStatus" class="badge muted" data-i18n="twitcasting.cookieMissing">Not configured</span>
+                        <button id="twitcastingCookieClearBtn" class="ghost small" type="button" data-i18n="twitcasting.cookieClear">Clear Cookie</button>
+                    </div>
+                </div>
+                <p class="section-note" data-i18n="twitcasting.authHelp">Upload a browser-exported cookie so this recorder can access members-only lives with your signed-in session.</p>
+                <div class="form-grid">
+                    <label>
+                        <span data-i18n="twitcasting.cookieFile">Cookie File</span>
+                        <input id="twitcastingCookieFileInput" type="file" accept=".txt,.cookies,.cookie">
+                        <small class="field-help" data-i18n="twitcasting.cookieFileHelp">Upload a Netscape cookie file or a text file that contains a full Cookie header.</small>
+                    </label>
+                    <label>
+                        <span data-i18n="twitcasting.cookieText">Cookie Text</span>
+                        <textarea id="twitcastingCookieTextInput" rows="4" spellcheck="false" placeholder="Cookie: tc_ss=...; tc_id=..."></textarea>
+                        <small class="field-help" data-i18n="twitcasting.cookieTextHelp">Optional fallback: paste the Cookie header here if you are not uploading a file.</small>
+                    </label>
+                </div>
+                <div class="inline-actions">
+                    <button id="twitcastingCookieUploadBtn" class="ghost small" type="button" data-i18n="twitcasting.cookieUpload">Upload Cookie</button>
                 </div>
             </div>
 

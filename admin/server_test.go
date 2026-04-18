@@ -489,9 +489,104 @@ func TestHandleFileDeleteStillRemovesFilesInsideRecordings(t *testing.T) {
 	}
 }
 
+func TestHandleTwitCastingAuthStoresCookieStatusWithoutEchoingSecret(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body := bytes.NewBufferString(`{"content":"Cookie: tc_ss=session123; tc_id=alice"}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/twitcasting/auth", body)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "session123") {
+		t.Fatalf("response leaked cookie secret: %s", recorder.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(rootDir, "twitcasting_auth.json")); err != nil {
+		t.Fatalf("expected auth file to be created: %v", err)
+	}
+	if !strings.Contains(recorder.Body.String(), `"configured":true`) {
+		t.Fatalf("expected configured auth status, got %s", recorder.Body.String())
+	}
+}
+
+func TestHandleTwitCastingAuthDeleteClearsCookie(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	if err := twitcasting.SaveAuthConfig(twitcasting.AuthConfig{CookieHeader: "tc_ss=session123"}); err != nil {
+		t.Fatalf("SaveAuthConfig() error = %v", err)
+	}
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/twitcasting/auth", nil)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(rootDir, "twitcasting_auth.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected auth file to be removed, stat err=%v", err)
+	}
+	if !strings.Contains(recorder.Body.String(), `"configured":false`) {
+		t.Fatalf("expected cleared auth status, got %s", recorder.Body.String())
+	}
+}
+
+func TestHandleManualRecordQueuesSingleRecording(t *testing.T) {
+	originalStartManualRecording := startManualRecording
+	startManualRecording = func(manager *service.Manager, rawURL string) (service.ManualRecordResult, error) {
+		if rawURL != "https://twitcasting.tv/alice/movie/123" {
+			t.Fatalf("unexpected raw URL: %s", rawURL)
+		}
+		return service.ManualRecordResult{
+			Streamer:     "alice",
+			StreamerName: "Alice Channel",
+			Title:        "Night Stream",
+			MovieID:      "123",
+			Folder:       "Recordings/alice",
+		}, nil
+	}
+	t.Cleanup(func() {
+		startManualRecording = originalStartManualRecording
+	})
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: t.TempDir(),
+	}, service.NewManager(), nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/manual/record", bytes.NewBufferString(`{"url":"https://twitcasting.tv/alice/movie/123"}`))
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"queued":true`) {
+		t.Fatalf("expected queued response, got %s", recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"streamer":"alice"`) {
+		t.Fatalf("expected streamer in response, got %s", recorder.Body.String())
+	}
+}
+
 func chdirTestRoot(t *testing.T, rootDir string) {
 	t.Helper()
 
+	twitcasting.InvalidateAuthCache()
 	originalWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -500,6 +595,7 @@ func chdirTestRoot(t *testing.T, rootDir string) {
 		t.Fatalf("chdir temp root: %v", err)
 	}
 	t.Cleanup(func() {
+		twitcasting.InvalidateAuthCache()
 		_ = os.Chdir(originalWD)
 	})
 }

@@ -17,9 +17,10 @@ import (
 )
 
 type Settings struct {
-	App      config.AppConfig `json:"app"`
-	Discord  discord.Config   `json:"discord"`
-	Telegram telegram.Config  `json:"telegram"`
+	App             config.AppConfig       `json:"app"`
+	Discord         discord.Config         `json:"discord"`
+	Telegram        telegram.Config        `json:"telegram"`
+	TwitCastingAuth twitcasting.AuthStatus `json:"twitcasting_auth"`
 }
 
 type FileRoot struct {
@@ -35,9 +36,10 @@ func LoadSettings() (Settings, error) {
 	}
 
 	return Settings{
-		App:      *appConfig,
-		Discord:  discord.LoadConfig(),
-		Telegram: telegram.LoadConfig(),
+		App:             *appConfig,
+		Discord:         discord.LoadConfig(),
+		Telegram:        telegram.LoadConfig(),
+		TwitCastingAuth: twitcasting.CurrentAuthStatus(),
 	}, nil
 }
 

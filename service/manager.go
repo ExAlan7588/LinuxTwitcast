@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -39,6 +40,14 @@ type Warning struct {
 	Code     string    `json:"code"`
 	Streamer string    `json:"streamer"`
 	RetryAt  time.Time `json:"retry_at,omitempty"`
+}
+
+type ManualRecordResult struct {
+	Streamer     string `json:"streamer"`
+	StreamerName string `json:"streamer_name"`
+	Title        string `json:"title"`
+	MovieID      string `json:"movie_id,omitempty"`
+	Folder       string `json:"folder"`
 }
 
 type streamWarning struct {
@@ -135,37 +144,16 @@ func (m *Manager) Start() error {
 		}
 		streamerCfg := *streamerCfg
 
-		var streamerNotifier record.DiscordNotifier
-		var discordNotifier *discord.Notifier
-		if notifier := discord.NewNotifierFromConfig(discordCfg, streamerCfg.ScreenId); notifier != nil {
-			streamerNotifier = notifier
-			discordNotifier = notifier
-		}
-
-		recordFunc := record.ToRecordFunc(&record.RecordConfig{
-			Streamer: streamerCfg.ScreenId,
-			Folder:   streamerCfg.Folder,
-			Password: streamerCfg.Password,
-			// 直播密码按每个 streamer 独立传入；没填时会在抓流阶段返回专门的缺密码错误。
-			StreamUrlFetcher: func(streamer string) (record.StreamLookupResult, error) {
+		recordFunc := m.newRecordFunc(
+			rootCtx,
+			streamerCfg,
+			telegramCfg,
+			discordCfg,
+			func(streamer string) (record.StreamLookupResult, error) {
+				// 直播密码按每个 streamer 独立传入；没填时会在抓流阶段返回专门的缺密码错误。
 				return twitcasting.GetWSStreamUrlWithPassword(streamer, streamerCfg.Password)
 			},
-			SinkProvider:   sink.NewFileSink,
-			StreamRecorder: twitcasting.RecordWS,
-			RootContext:    rootCtx,
-			Notifier:       streamerNotifier,
-			PostProcessor: func(session record.SessionInfo) {
-				uploadResult := telegram.Process(telegramCfg, session)
-				if discordNotifier != nil && strings.TrimSpace(uploadResult.MessageURL) != "" {
-					if err := discordNotifier.UpdateArchiveWithTelegramLink(session, uploadResult.MessageURL); err != nil {
-						log.Printf("[Discord] Failed to attach Telegram archive link for [%s]: %v\n", session.Streamer, err)
-					}
-				}
-			},
-			OnSessionStart: m.handleSessionStart,
-			OnSessionEnd:   m.handleSessionEnd,
-			OnStreamLookup: m.handleStreamLookup,
-		})
+		)
 
 		_, err := scheduler.AddFunc(
 			streamerCfg.Schedule,
@@ -210,6 +198,64 @@ func (m *Manager) Start() error {
 	scheduler.Start()
 	log.Println("Croned recorder started")
 	return nil
+}
+
+func (m *Manager) StartManualRecording(rawURL string) (ManualRecordResult, error) {
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		m.storeError(err)
+		return ManualRecordResult{}, err
+	}
+
+	target, err := twitcasting.ParseManualRecordTarget(rawURL)
+	if err != nil {
+		m.storeError(err)
+		return ManualRecordResult{}, err
+	}
+	if m.isStreamerActive(target.ScreenID) {
+		err = fmt.Errorf("streamer [%s] is already recording", target.ScreenID)
+		m.storeError(err)
+		return ManualRecordResult{}, err
+	}
+
+	streamerCfg := resolveManualStreamerConfig(cfg, target.ScreenID)
+	telegramCfg := telegram.LoadConfig()
+	discordCfg := discord.LoadConfig()
+
+	target, lookup, err := twitcasting.LookupManualRecordingTarget(rawURL, streamerCfg.Password)
+	m.handleStreamLookup(target.ScreenID, err)
+	if err != nil {
+		m.storeError(err)
+		return ManualRecordResult{
+			Streamer:     target.ScreenID,
+			StreamerName: lookup.StreamerName,
+			Title:        lookup.Title,
+			MovieID:      lookup.MovieID,
+			Folder:       streamerCfg.Folder,
+		}, err
+	}
+
+	recordFunc := m.newRecordFunc(
+		context.Background(),
+		streamerCfg,
+		telegramCfg,
+		discordCfg,
+		func(streamer string) (record.StreamLookupResult, error) {
+			if strings.TrimSpace(streamer) != strings.TrimSpace(target.ScreenID) {
+				return record.StreamLookupResult{}, fmt.Errorf("manual record streamer mismatch: %s", streamer)
+			}
+			return lookup, nil
+		},
+	)
+	go recordFunc()
+
+	return ManualRecordResult{
+		Streamer:     target.ScreenID,
+		StreamerName: lookup.StreamerName,
+		Title:        lookup.Title,
+		MovieID:      lookup.MovieID,
+		Folder:       streamerCfg.Folder,
+	}, nil
 }
 
 func (m *Manager) Stop(ctx context.Context) error {
@@ -334,10 +380,54 @@ func (m *Manager) handleSessionStart(session record.SessionInfo) {
 	delete(m.warnings, session.Streamer)
 }
 
+func (m *Manager) newRecordFunc(
+	rootCtx context.Context,
+	streamerCfg config.StreamerConfig,
+	telegramCfg telegram.Config,
+	discordCfg discord.Config,
+	streamURLFetcher func(string) (record.StreamLookupResult, error),
+) func() {
+	var streamerNotifier record.DiscordNotifier
+	var discordNotifier *discord.Notifier
+	if notifier := discord.NewNotifierFromConfig(discordCfg, streamerCfg.ScreenId); notifier != nil {
+		streamerNotifier = notifier
+		discordNotifier = notifier
+	}
+
+	return record.ToRecordFunc(&record.RecordConfig{
+		Streamer:         streamerCfg.ScreenId,
+		Folder:           streamerCfg.Folder,
+		Password:         streamerCfg.Password,
+		StreamUrlFetcher: streamURLFetcher,
+		SinkProvider:     sink.NewFileSink,
+		StreamRecorder:   twitcasting.RecordWS,
+		RootContext:      rootCtx,
+		Notifier:         streamerNotifier,
+		PostProcessor: func(session record.SessionInfo) {
+			uploadResult := telegram.Process(telegramCfg, session)
+			if discordNotifier != nil && strings.TrimSpace(uploadResult.MessageURL) != "" {
+				if err := discordNotifier.UpdateArchiveWithTelegramLink(session, uploadResult.MessageURL); err != nil {
+					log.Printf("[Discord] Failed to attach Telegram archive link for [%s]: %v\n", session.Streamer, err)
+				}
+			}
+		},
+		OnSessionStart: m.handleSessionStart,
+		OnSessionEnd:   m.handleSessionEnd,
+		OnStreamLookup: m.handleStreamLookup,
+	})
+}
+
 func (m *Manager) handleSessionEnd(session record.SessionInfo) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.active, session.Streamer)
+}
+
+func (m *Manager) isStreamerActive(streamer string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, exists := m.active[streamer]
+	return exists
 }
 
 func (m *Manager) storeError(err error) {
@@ -432,5 +522,28 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 	}
 	if shouldNotifyInvalid {
 		go discord.SendInvalidStreamerIDAlert(discordCfg, streamer)
+	}
+}
+
+func resolveManualStreamerConfig(cfg *config.AppConfig, screenID string) config.StreamerConfig {
+	trimmedScreenID := strings.TrimSpace(screenID)
+	if cfg != nil {
+		for _, streamerCfg := range cfg.Streamers {
+			if streamerCfg == nil {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(streamerCfg.ScreenId), trimmedScreenID) {
+				return config.StreamerConfig{
+					ScreenId: trimmedScreenID,
+					Folder:   strings.TrimSpace(streamerCfg.Folder),
+					Password: strings.TrimSpace(streamerCfg.Password),
+				}
+			}
+		}
+	}
+
+	return config.StreamerConfig{
+		ScreenId: trimmedScreenID,
+		Folder:   filepath.Join("Recordings", trimmedScreenID),
 	}
 }

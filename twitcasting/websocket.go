@@ -71,6 +71,7 @@ func newRecordingSocket(recordCtx record.RecordContext, streamURL string, sinkCh
 
 	socket.RequestHeader.Set("Origin", baseDomain)
 	socket.RequestHeader.Set("User-Agent", userAgent)
+	ApplyAuthToHeaders(socket.RequestHeader)
 
 	signalDisconnect := func(err error) {
 		if err == nil {

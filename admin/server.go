@@ -32,6 +32,9 @@ var assets embed.FS
 
 var lookupStreamerProfile = twitcasting.LookupStreamerProfile
 var convertManagedTSFile = telegram.ConvertManagedTSFile
+var startManualRecording = func(manager *service.Manager, rawURL string) (service.ManualRecordResult, error) {
+	return manager.StartManualRecording(rawURL)
+}
 
 type Options struct {
 	Address  string
@@ -126,7 +129,9 @@ func NewServer(options Options, manager *service.Manager, restartRequested chan<
 	mux.Handle("/api/status", server.withAuth(http.HandlerFunc(server.handleStatus)))
 	mux.Handle("/api/version/check", server.withAuth(http.HandlerFunc(server.handleVersionCheck)))
 	mux.Handle("/api/settings", server.withAuth(http.HandlerFunc(server.handleSettings)))
+	mux.Handle("/api/twitcasting/auth", server.withAuth(http.HandlerFunc(server.handleTwitCastingAuth)))
 	mux.Handle("/api/streamers/check", server.withAuth(http.HandlerFunc(server.handleStreamerCheck)))
+	mux.Handle("/api/manual/record", server.withAuth(http.HandlerFunc(server.handleManualRecord)))
 	mux.Handle("/api/discord/test", server.withAuth(http.HandlerFunc(server.handleDiscordTest)))
 	mux.Handle("/api/telegram/test", server.withAuth(http.HandlerFunc(server.handleTelegramTest)))
 	mux.Handle("/api/recorder/start", server.withAuth(http.HandlerFunc(server.handleRecorderStart)))
@@ -290,6 +295,80 @@ func (s *Server) handleStreamerCheck(w http.ResponseWriter, r *http.Request) {
 		"title":             profile.Title,
 		"avatar_url":        profile.AvatarURL,
 		"password_required": profile.PasswordRequired,
+	})
+}
+
+func (s *Server) handleTwitCastingAuth(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.writeJSON(w, twitcasting.CurrentAuthStatus())
+
+	case http.MethodPut:
+		var req struct {
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		normalized, err := twitcasting.NormalizeCookieInput(req.Content)
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := twitcasting.SaveAuthConfig(twitcasting.AuthConfig{CookieHeader: normalized}); err != nil {
+			s.writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		s.writeJSON(w, map[string]any{
+			"saved":  true,
+			"status": twitcasting.CurrentAuthStatus(),
+		})
+
+	case http.MethodDelete:
+		if err := twitcasting.ClearAuthConfig(); err != nil {
+			s.writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		s.writeJSON(w, map[string]any{
+			"cleared": true,
+			"status":  twitcasting.CurrentAuthStatus(),
+		})
+
+	default:
+		s.methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleManualRecord(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	result, err := startManualRecording(s.manager, req.URL)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"queued":   true,
+		"streamer": result.Streamer,
+		"name":     result.StreamerName,
+		"title":    result.Title,
+		"movie_id": result.MovieID,
+		"folder":   result.Folder,
 	})
 }
 

@@ -196,15 +196,7 @@ func LookupStreamerProfile(streamer string) (StreamerProfile, error) {
 
 func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupResult, error) {
 	pageInfo := fetchStreamInfo(streamer)
-	result := record.StreamLookupResult{
-		StreamerName: pageInfo.streamerName,
-		Title:        pageInfo.title,
-		AvatarURL:    pageInfo.avatarURL,
-		CoverURL:     pageInfo.coverURL,
-	}
-	if pageInfo.passwordRequired && strings.TrimSpace(password) == "" {
-		return result, ErrPasswordRequired
-	}
+	effectiveInfo := pageInfo
 
 	u, _ := url.Parse(apiEndpoint)
 	q := u.Query()
@@ -215,41 +207,41 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 	request, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 	request.Header.Set("User-Agent", userAgent)
 	request.Header.Set("Referer", fmt.Sprint(baseDomain, "/", streamer))
+	ApplyAuthToRequest(request)
 	response, err := httpClient.Do(request)
 	if err != nil {
+		result := buildLookupResultFromPageInfo(effectiveInfo)
 		return result, fmt.Errorf("requesting stream info failed: %w", err)
 	}
 	defer response.Body.Close()
 
 	responseData := map[string]interface{}{}
 	if err = json.NewDecoder(response.Body).Decode(&responseData); err != nil {
+		result := buildLookupResultFromPageInfo(effectiveInfo)
 		return result, err
 	}
 	jq := jsonq.NewQuery(responseData)
 
 	if err = checkStreamOnline(jq); err != nil {
+		result := buildLookupResultFromPageInfo(effectiveInfo)
 		return result, err
-	}
-	if pageInfo.memberOnly {
-		return result, wrapStreamLookupError(ErrMemberOnlyLive, result)
 	}
 	if movieID, err := jq.String("movie", "id"); err == nil {
 		if movieInfo, movieErr := fetchMovieInfo(streamer, movieID); movieErr == nil {
-			if movieInfo.streamerName != "" && movieInfo.streamerName != streamer {
-				result.StreamerName = movieInfo.streamerName
-			}
-			if movieInfo.title != "" {
-				result.Title = movieInfo.title
-			}
-			if movieInfo.avatarURL != "" {
-				result.AvatarURL = movieInfo.avatarURL
-			}
-			if movieInfo.coverURL != "" {
-				result.CoverURL = movieInfo.coverURL
-			}
+			effectiveInfo = mergePageInfo(effectiveInfo, movieInfo)
 		} else {
 			log.Printf("Failed fetching movie page info for streamer [%s] movie [%s]: %v\n", streamer, movieID, movieErr)
 		}
+	}
+	result := buildLookupResultFromPageInfo(effectiveInfo)
+	if movieID, err := jq.String("movie", "id"); err == nil {
+		result.MovieID = strings.TrimSpace(movieID)
+	}
+	if effectiveInfo.memberOnly {
+		return result, wrapStreamLookupError(ErrMemberOnlyLive, result)
+	}
+	if effectiveInfo.passwordRequired && strings.TrimSpace(password) == "" {
+		return result, ErrPasswordRequired
 	}
 
 	// Try to get URL directly
@@ -262,6 +254,35 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 	fallbackURL, fallbackErr := fallbackStreamURL(jq)
 	result.StreamURL = appendPasswordToken(fallbackURL, password)
 	return result, fallbackErr
+}
+
+func buildLookupResultFromPageInfo(info streamPageInfo) record.StreamLookupResult {
+	return record.StreamLookupResult{
+		StreamerName: info.streamerName,
+		Title:        info.title,
+		AvatarURL:    info.avatarURL,
+		CoverURL:     info.coverURL,
+	}
+}
+
+func mergePageInfo(base, override streamPageInfo) streamPageInfo {
+	merged := base
+	if override.streamerName != "" {
+		merged.streamerName = override.streamerName
+	}
+	if override.title != "" {
+		merged.title = override.title
+	}
+	if override.avatarURL != "" {
+		merged.avatarURL = override.avatarURL
+	}
+	if override.coverURL != "" {
+		merged.coverURL = override.coverURL
+	}
+	// movie 页面比频道首页更接近实际直播，因此锁定类型优先信 movie 页面。
+	merged.passwordRequired = override.passwordRequired
+	merged.memberOnly = override.memberOnly
+	return merged
 }
 
 func checkStreamOnline(jq *jsonq.JsonQuery) error {
@@ -339,6 +360,7 @@ func fetchMovieInfo(streamer, movieID string) (streamPageInfo, error) {
 		return streamPageInfo{streamerName: streamer}, err
 	}
 	req.Header.Set("User-Agent", userAgent)
+	ApplyAuthToRequest(req)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -364,6 +386,7 @@ func fetchStreamInfoWithStatus(streamer string) (streamPageInfo, int, error) {
 		return streamPageInfo{streamerName: streamer}, 0, err
 	}
 	req.Header.Set("User-Agent", userAgent)
+	ApplyAuthToRequest(req)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
