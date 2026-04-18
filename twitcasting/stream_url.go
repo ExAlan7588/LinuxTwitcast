@@ -124,6 +124,29 @@ func LookupResultFromError(err error) (record.StreamLookupResult, bool) {
 	return record.StreamLookupResult{}, false
 }
 
+// 轮询 TwitCasting 时，离线和会员限定都是常态，不该继续伪装成 Error 噪音。
+func LogStreamLookupOutcome(streamer string, lookup record.StreamLookupResult, err error) {
+	switch {
+	case err == nil:
+		log.Printf("[Info] Fetched stream URL for streamer [%s]: %s\n", streamer, lookup.StreamURL)
+	case errors.Is(err, ErrStreamOffline):
+		log.Printf("[Info] Streamer [%s] is currently offline; skipping this polling round\n", streamer)
+	case errors.Is(err, ErrMemberOnlyLive):
+		title := strings.TrimSpace(lookup.Title)
+		if title == "" {
+			log.Printf("[Info] Streamer [%s] is currently members-only; recording stays skipped\n", streamer)
+			return
+		}
+		log.Printf("[Info] Streamer [%s] is currently members-only; recording stays skipped (%s)\n", streamer, title)
+	case errors.Is(err, ErrPasswordRequired):
+		log.Printf("[Warn] Streamer [%s] requires a TwitCasting password before recording can continue\n", streamer)
+	case errors.Is(err, ErrStreamerNotFound):
+		log.Printf("[Warn] Streamer [%s] screen-id was not found during lookup\n", streamer)
+	default:
+		log.Printf("[Error] Failed fetching stream URL for streamer [%s]: %v\n", streamer, err)
+	}
+}
+
 type streamPageInfo struct {
 	streamerName     string
 	title            string

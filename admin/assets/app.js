@@ -2,10 +2,11 @@ const ui = {};
 const fileState = { root: "", path: "" };
 const THEME_STORAGE_KEY = "twitcast-theme";
 const HIDE_OFFLINE_LOGS_STORAGE_KEY = "twitcast-hide-offline-logs";
+const ERRORS_ONLY_LOGS_STORAGE_KEY = "twitcast-errors-only-logs";
 const LANG_STORAGE_KEY = "twitcast-ui-lang";
 const langState = { value: "EN" };
 const themeState = { value: "dark" };
-const logState = { lines: [], hideOffline: true, filteredCount: 0, loaded: false };
+const logState = { lines: [], alertLines: [], hideOffline: true, errorsOnly: false, filteredCount: 0, loaded: false };
 const appState = { status: null, files: null, streamers: [], twitcastingAuth: {} };
 const streamerModalState = {
     index: null,
@@ -41,12 +42,14 @@ const I18N = {
         "theme.ariaLight": "Switch to light theme",
         "theme.ariaDark": "Switch to dark theme",
         "status.section": "Service Status",
-        "status.activeRecordings": "Active Recordings",
-        "status.noActiveRecordings": "No active recordings.",
+        "status.activeRecordings": "Active Recordings / Downloads",
+        "status.noActiveRecordings": "No active recordings or downloads.",
         "status.running": "Running",
         "status.stopped": "Stopped",
         "status.stopping": "Stopping",
         "status.untitledStream": "Untitled stream",
+        "status.downloading": "Downloading",
+        "status.downloadPart": "Part {current}/{total}",
         "system.section": "System Info",
         "system.checkUpdates": "Check for Updates",
         "system.diagnostics": "Diagnostics",
@@ -74,8 +77,14 @@ const I18N = {
         "settings.langEnglish": "English",
         "settings.langChinese": "Traditional Chinese",
         "settings.mirrorLogs": "Mirror logs to `app.log`",
+        "settings.twitcastingAccessSection": "TwitCasting Access",
+        "settings.twitcastingAccessManage": "TwitCasting Access",
+        "settings.twitcastingAccessHelp": "Keep API credentials and login cookie in a dedicated panel so streamer settings stay focused.",
         "settings.twitcastingApiSection": "TwitCasting API (optional)",
         "settings.twitcastingAuthSection": "TwitCasting Login Cookie",
+        "settings.twitcastingApiMissing": "API not set",
+        "settings.twitcastingApiConfigured": "API configured",
+        "settings.twitcastingApiIncomplete": "API incomplete",
         "twitcasting.clientId": "Client ID",
         "twitcasting.clientSecret": "Client Secret",
         "twitcasting.help": "Use an official TwitCasting Client ID / Client Secret for more reliable profile lookups and higher-quality avatar URLs.",
@@ -150,14 +159,20 @@ const I18N = {
         "files.methodDocument": "document",
         "logs.section": "Live Logs",
         "logs.hideOffline": "Hide offline polling",
+        "logs.errorsOnly": "Only show Error/Fatal",
+        "logs.alertsSection": "Error / Fatal Highlights",
+        "logs.noAlerts": "No Error / Fatal highlights right now.",
         "logs.noUseful": "No useful log lines remain in the latest window. {count} offline polling entries were hidden. Disable the filter to inspect the raw output.",
         "logs.noLines": "No log lines are available right now.",
         "logs.raw": "Showing raw live logs.",
         "logs.filterEnabled": "Offline polling filter is enabled.",
         "logs.filteredCount": "{count} offline polling log lines are hidden.",
+        "logs.errorsOnlyEnabled": "Only Error / Fatal log lines are shown.",
+        "logs.filteredByErrorsOnly": "{count} non Error/Fatal log lines are hidden.",
+        "logs.filteredCombined": "{count} log lines are hidden by the current filters.",
         "metrics.enabledStreamers": "Enabled Streamers",
         "metrics.scheduledJobs": "Scheduled Jobs",
-        "metrics.activeRecordings": "Active Recordings",
+        "metrics.activeRecordings": "Active Jobs",
         "metrics.uptime": "Uptime",
         "metrics.latestError": "Latest Error",
         "metrics.notStarted": "Not started",
@@ -233,12 +248,14 @@ const I18N = {
         "theme.ariaLight": "切換為亮色主題",
         "theme.ariaDark": "切換為暗色主題",
         "status.section": "服務狀態",
-        "status.activeRecordings": "進行中的錄影",
-        "status.noActiveRecordings": "目前沒有進行中的錄影。",
+        "status.activeRecordings": "進行或下載中的錄影",
+        "status.noActiveRecordings": "目前沒有進行或下載中的錄影。",
         "status.running": "執行中",
         "status.stopped": "已停止",
         "status.stopping": "停止中",
         "status.untitledStream": "未命名直播",
+        "status.downloading": "下載中",
+        "status.downloadPart": "第 {current}/{total} 段",
         "system.section": "系統資訊",
         "system.checkUpdates": "檢查更新",
         "system.diagnostics": "診斷資訊",
@@ -266,8 +283,14 @@ const I18N = {
         "settings.langEnglish": "英文",
         "settings.langChinese": "繁體中文",
         "settings.mirrorLogs": "同步寫入 `app.log`",
+        "settings.twitcastingAccessSection": "TwitCasting 存取設定",
+        "settings.twitcastingAccessManage": "TwitCasting 存取",
+        "settings.twitcastingAccessHelp": "把 API 憑證與登入 Cookie 收進獨立面板，讓直播主設定維持精簡。",
         "settings.twitcastingApiSection": "TwitCasting API（選填）",
         "settings.twitcastingAuthSection": "TwitCasting 登入 Cookie",
+        "settings.twitcastingApiMissing": "API 未設定",
+        "settings.twitcastingApiConfigured": "API 已設定",
+        "settings.twitcastingApiIncomplete": "API 未填完整",
         "twitcasting.clientId": "Client ID",
         "twitcasting.clientSecret": "Client Secret",
         "twitcasting.help": "填入官方 TwitCasting Client ID / Client Secret 後，直播主資料查詢會更穩定，大頭貼網址也會盡量升級成較高畫質。",
@@ -342,14 +365,20 @@ const I18N = {
         "files.methodDocument": "文件",
         "logs.section": "即時日誌",
         "logs.hideOffline": "隱藏離線輪詢",
+        "logs.errorsOnly": "只顯示 Error/Fatal",
+        "logs.alertsSection": "Error / Fatal 摘要",
+        "logs.noAlerts": "目前沒有 Error / Fatal 摘要。",
         "logs.noUseful": "最新視窗內沒有可用的日誌行。已隱藏 {count} 筆離線輪詢訊息，如需查看原始輸出請關閉過濾。",
         "logs.noLines": "目前沒有可顯示的日誌行。",
         "logs.raw": "目前顯示原始即時日誌。",
         "logs.filterEnabled": "已啟用離線輪詢過濾。",
         "logs.filteredCount": "已隱藏 {count} 筆離線輪詢日誌。",
+        "logs.errorsOnlyEnabled": "目前只顯示 Error / Fatal 日誌。",
+        "logs.filteredByErrorsOnly": "已隱藏 {count} 筆非 Error / Fatal 日誌。",
+        "logs.filteredCombined": "目前的篩選共隱藏了 {count} 筆日誌。",
         "metrics.enabledStreamers": "已啟用直播主",
         "metrics.scheduledJobs": "排程數量",
-        "metrics.activeRecordings": "錄影中數量",
+        "metrics.activeRecordings": "進行/下載中數量",
         "metrics.uptime": "運行時間",
         "metrics.latestError": "最近錯誤",
         "metrics.notStarted": "尚未啟動",
@@ -449,6 +478,13 @@ function cacheElements() {
 
     ui.langInput = document.getElementById("langInput");
     ui.enableLogInput = document.getElementById("enableLogInput");
+    ui.openTwitcastingAccessModalBtn = document.getElementById("openTwitcastingAccessModalBtn");
+    ui.openTwitcastingAccessInlineBtn = document.getElementById("openTwitcastingAccessInlineBtn");
+    ui.twitcastingAccessModal = document.getElementById("twitcastingAccessModal");
+    ui.twitcastingAccessModalBackdrop = document.getElementById("twitcastingAccessModalBackdrop");
+    ui.closeTwitcastingAccessModalBtn = document.getElementById("closeTwitcastingAccessModalBtn");
+    ui.twitcastingApiStatusSummary = document.getElementById("twitcastingApiStatusSummary");
+    ui.twitcastingCookieStatusSummary = document.getElementById("twitcastingCookieStatusSummary");
     ui.twitcastingClientIdInput = document.getElementById("twitcastingClientIdInput");
     ui.twitcastingClientSecretInput = document.getElementById("twitcastingClientSecretInput");
     ui.twitcastingCookieStatus = document.getElementById("twitcastingCookieStatus");
@@ -496,7 +532,9 @@ function cacheElements() {
     ui.filesBody = document.getElementById("filesBody");
     ui.logsPanel = document.getElementById("logsPanel");
     ui.logsSummary = document.getElementById("logsSummary");
+    ui.logAlerts = document.getElementById("logAlerts");
     ui.hideOfflineLogsInput = document.getElementById("hideOfflineLogsInput");
+    ui.errorsOnlyLogsInput = document.getElementById("errorsOnlyLogsInput");
     ui.checkVersionBtn = document.getElementById("checkVersionBtn");
 
     ui.themeToggleBtn = document.getElementById("themeToggleBtn");
@@ -540,6 +578,7 @@ function applyLanguage(language) {
         renderFiles(appState.files);
     }
 
+    renderTwitCastingAPIStatus();
     renderTwitCastingAuth(appState.twitcastingAuth || {});
     renderStreamers(appState.streamers);
     updateStreamerModalCopy();
@@ -552,8 +591,14 @@ function bindEvents() {
     ui.refreshBtn.addEventListener("click", () => refreshAll().catch(handleError));
     ui.saveSettingsBtn.addEventListener("click", () => saveSettings().catch(handleError));
     ui.checkVersionBtn.addEventListener("click", () => checkForUpdates().catch(handleError));
+    ui.openTwitcastingAccessModalBtn.addEventListener("click", openTwitcastingAccessModal);
+    ui.openTwitcastingAccessInlineBtn.addEventListener("click", openTwitcastingAccessModal);
+    ui.closeTwitcastingAccessModalBtn.addEventListener("click", closeTwitcastingAccessModal);
+    ui.twitcastingAccessModalBackdrop.addEventListener("click", closeTwitcastingAccessModal);
     ui.twitcastingCookieUploadBtn.addEventListener("click", () => uploadTwitCastingCookie().catch(handleError));
     ui.twitcastingCookieClearBtn.addEventListener("click", () => clearTwitCastingCookie().catch(handleError));
+    ui.twitcastingClientIdInput.addEventListener("input", renderTwitCastingAPIStatus);
+    ui.twitcastingClientSecretInput.addEventListener("input", renderTwitCastingAPIStatus);
     ui.discordTestBtn.addEventListener("click", () => sendDiscordTest().catch(handleError));
     ui.telegramTestBtn.addEventListener("click", () => sendTelegramTest().catch(handleError));
     ui.manualRecordBtn.addEventListener("click", () => startManualRecord().catch(handleError));
@@ -584,6 +629,7 @@ function bindEvents() {
     ui.fileRefreshBtn.addEventListener("click", () => browseFiles(fileState.root, fileState.path).catch(handleError));
     ui.logsRefreshBtn.addEventListener("click", () => loadLogs().catch(handleError));
     ui.hideOfflineLogsInput.addEventListener("change", handleOfflineLogFilterChange);
+    ui.errorsOnlyLogsInput.addEventListener("change", handleOfflineLogFilterChange);
     ui.langInput.addEventListener("change", () => applyLanguage(ui.langInput.value));
     document.addEventListener("keydown", handleGlobalKeydown);
 }
@@ -628,7 +674,9 @@ function applyTheme(theme) {
 
 function initLogFilters() {
     logState.hideOffline = readStoredHideOfflineLogs();
+    logState.errorsOnly = readStoredErrorsOnlyLogs();
     ui.hideOfflineLogsInput.checked = logState.hideOffline;
+    ui.errorsOnlyLogsInput.checked = logState.errorsOnly;
 }
 
 function readStoredHideOfflineLogs() {
@@ -640,10 +688,20 @@ function readStoredHideOfflineLogs() {
     }
 }
 
+function readStoredErrorsOnlyLogs() {
+    try {
+        return window.localStorage.getItem(ERRORS_ONLY_LOGS_STORAGE_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+
 function handleOfflineLogFilterChange() {
     logState.hideOffline = ui.hideOfflineLogsInput.checked;
+    logState.errorsOnly = ui.errorsOnlyLogsInput.checked;
     try {
         window.localStorage.setItem(HIDE_OFFLINE_LOGS_STORAGE_KEY, logState.hideOffline ? "1" : "0");
+        window.localStorage.setItem(ERRORS_ONLY_LOGS_STORAGE_KEY, logState.errorsOnly ? "1" : "0");
     } catch {}
     loadLogs().catch(handleError);
 }
@@ -712,8 +770,12 @@ async function loadLogs() {
     if (logState.hideOffline) {
         params.set("hide_offline", "1");
     }
+    if (logState.errorsOnly) {
+        params.set("errors_only", "1");
+    }
     const data = await api(`/api/logs?${params.toString()}`);
     logState.lines = Array.isArray(data.lines) ? data.lines : [];
+    logState.alertLines = Array.isArray(data.alert_lines) ? data.alert_lines : [];
     logState.filteredCount = Number.isFinite(data.filtered_count) ? data.filtered_count : 0;
     logState.loaded = true;
     renderLogs();
@@ -723,15 +785,17 @@ async function loadLogs() {
 function renderLogs() {
     if (!logState.loaded) {
         ui.logsSummary.textContent = "";
+        ui.logAlerts.textContent = t("common.loading");
         ui.logsPanel.textContent = t("common.loading");
         return;
     }
 
     ui.logsSummary.textContent = buildLogSummary();
+    renderLogAlerts();
 
     if (!logState.lines.length) {
-        if (logState.hideOffline && logState.filteredCount > 0) {
-            ui.logsPanel.textContent = t("logs.noUseful", { count: logState.filteredCount });
+        if ((logState.hideOffline || logState.errorsOnly) && logState.filteredCount > 0) {
+            ui.logsPanel.textContent = t("logs.filteredCombined", { count: logState.filteredCount });
         } else {
             ui.logsPanel.textContent = t("logs.noLines");
         }
@@ -742,19 +806,43 @@ function renderLogs() {
 }
 
 function buildLogSummary() {
-    if (!logState.hideOffline) {
+    if (!logState.hideOffline && !logState.errorsOnly) {
         return t("logs.raw");
     }
-    if (logState.filteredCount <= 0) {
-        return t("logs.filterEnabled");
+    if (logState.hideOffline && logState.errorsOnly) {
+        return logState.filteredCount > 0 ?
+            t("logs.filteredCombined", { count: logState.filteredCount }) :
+            `${t("logs.filterEnabled")} ${t("logs.errorsOnlyEnabled")}`;
     }
-    return t("logs.filteredCount", { count: logState.filteredCount });
+    if (logState.filteredCount <= 0) {
+        return logState.hideOffline ? t("logs.filterEnabled") : t("logs.errorsOnlyEnabled");
+    }
+    return logState.hideOffline ?
+        t("logs.filteredCount", { count: logState.filteredCount }) :
+        t("logs.filteredByErrorsOnly", { count: logState.filteredCount });
+}
+
+function renderLogAlerts() {
+    ui.logAlerts.innerHTML = "";
+    if (!logState.alertLines.length) {
+        ui.logAlerts.textContent = t("logs.noAlerts");
+        return;
+    }
+
+    logState.alertLines.forEach((line) => {
+        const item = document.createElement("div");
+        item.className = "log-alert-item mono";
+        item.textContent = line;
+        ui.logAlerts.appendChild(item);
+    });
 }
 
 function renderStatus(data) {
     const recorder = data.recorder || {};
     const runtime = data.runtime || {};
     const diagnostics = data.diagnostics || [];
+    const activeRecordings = Array.isArray(recorder.active_recordings) ? recorder.active_recordings : [];
+    const activeDownloads = Array.isArray(recorder.active_downloads) ? recorder.active_downloads : [];
 
     ui.statusBadge.className = `badge ${recorder.stopping ? "stopping" : recorder.running ? "running" : "stopped"}`;
     ui.statusBadge.textContent = recorder.stopping ? t("status.stopping") : recorder.running ? t("status.running") : t("status.stopped");
@@ -762,7 +850,7 @@ function renderStatus(data) {
     const metrics = [
         [t("metrics.enabledStreamers"), recorder.enabled_streamers ?? 0],
         [t("metrics.scheduledJobs"), recorder.scheduled_jobs ?? 0],
-        [t("metrics.activeRecordings"), (recorder.active_recordings || []).length],
+        [t("metrics.activeRecordings"), activeRecordings.length + activeDownloads.length],
         [t("metrics.uptime"), recorder.uptime || t("metrics.notStarted")]
     ];
     ui.recorderSummary.innerHTML = "";
@@ -781,19 +869,14 @@ function renderStatus(data) {
     }
 
     ui.activeRecordings.innerHTML = "";
-    if (!recorder.active_recordings?.length) {
+    if (!activeRecordings.length && !activeDownloads.length) {
         ui.activeRecordings.textContent = t("status.noActiveRecordings");
     } else {
-        recorder.active_recordings.forEach((entry) => {
-            const item = document.createElement("div");
-            item.className = "record-item";
-            item.innerHTML = `
-                <strong>${escapeHtml(entry.streamer_name || entry.streamer)}</strong>
-                <div class="muted-text mono">${escapeHtml(entry.streamer)}</div>
-                <div>${escapeHtml(entry.title || t("status.untitledStream"))}</div>
-                <div class="muted-text mono">${escapeHtml(entry.filename || "")}</div>
-            `;
-            ui.activeRecordings.appendChild(item);
+        activeRecordings.forEach((entry) => {
+            ui.activeRecordings.appendChild(createActiveRecordingItem(entry));
+        });
+        activeDownloads.forEach((entry) => {
+            ui.activeRecordings.appendChild(createActiveDownloadItem(entry));
         });
     }
 
@@ -831,6 +914,55 @@ function renderStatus(data) {
     ui.stopRecorderBtn.disabled = !recorder.running && !recorder.stopping;
 }
 
+function createActiveRecordingItem(entry) {
+    const item = document.createElement("div");
+    item.className = "record-item";
+    item.innerHTML = `
+        <strong>${escapeHtml(entry.streamer_name || entry.streamer)}</strong>
+        <div class="muted-text mono">${escapeHtml(entry.streamer)}</div>
+        <div>${escapeHtml(entry.title || t("status.untitledStream"))}</div>
+        <div class="muted-text mono">${escapeHtml(entry.filename || "")}</div>
+    `;
+    return item;
+}
+
+function createActiveDownloadItem(entry) {
+    const item = document.createElement("div");
+    const progress = clampProgressPercent(entry.progress_percent);
+    const currentPart = Number.isFinite(entry.current_part) ? Math.max(0, Math.trunc(entry.current_part)) : 0;
+    const totalParts = Number.isFinite(entry.total_parts) ? Math.max(0, Math.trunc(entry.total_parts)) : 0;
+    const statusLabel = totalParts > 0 ?
+        `${t("status.downloading")} · ${t("status.downloadPart", { current: Math.max(currentPart, 1), total: totalParts })}` :
+        t("status.downloading");
+
+    item.className = "record-item download-item";
+    item.innerHTML = `
+        <strong>${escapeHtml(entry.streamer_name || entry.streamer)}</strong>
+        <div class="muted-text mono">${escapeHtml(entry.streamer || "")}${entry.movie_id ? ` · movie/${escapeHtml(entry.movie_id)}` : ""}</div>
+        <div>${escapeHtml(entry.title || t("status.untitledStream"))}</div>
+        <div class="muted-text mono">${escapeHtml(entry.current_file || "")}</div>
+        <div class="download-progress-meta">
+            <span>${escapeHtml(statusLabel)}</span>
+            <span class="mono">${progress.toFixed(0)}%</span>
+        </div>
+        <div class="download-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.toFixed(0)}">
+            <div class="download-progress-bar" style="width: ${progress.toFixed(2)}%;"></div>
+        </div>
+    `;
+    return item;
+}
+
+function clampProgressPercent(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return 0;
+    }
+    if (numeric > 100) {
+        return 100;
+    }
+    return numeric;
+}
+
 function renderSettings(settings) {
     appState.streamers = normalizeStreamers(settings.app?.streamers || []);
     appState.twitcastingAuth = settings.twitcasting_auth || {};
@@ -839,6 +971,7 @@ function renderSettings(settings) {
     ui.enableLogInput.checked = Boolean(settings.app?.enable_log);
     ui.twitcastingClientIdInput.value = settings.app?.twitcasting_api?.client_id || "";
     ui.twitcastingClientSecretInput.value = settings.app?.twitcasting_api?.client_secret || "";
+    renderTwitCastingAPIStatus();
     renderTwitCastingAuth(appState.twitcastingAuth);
     renderStreamers(appState.streamers);
 
@@ -864,7 +997,29 @@ function renderTwitCastingAuth(status) {
     ui.twitcastingCookieStatus.textContent = configured ?
         t("twitcasting.cookieConfigured", { count: cookieCount }) :
         t("twitcasting.cookieMissing");
+    ui.twitcastingCookieStatusSummary.className = `badge ${configured ? "running" : "muted"}`;
+    ui.twitcastingCookieStatusSummary.textContent = configured ?
+        t("twitcasting.cookieConfigured", { count: cookieCount }) :
+        t("twitcasting.cookieMissing");
     ui.twitcastingCookieClearBtn.disabled = !configured;
+}
+
+function renderTwitCastingAPIStatus() {
+    const clientID = ui.twitcastingClientIdInput?.value.trim() || "";
+    const clientSecret = ui.twitcastingClientSecretInput?.value.trim() || "";
+
+    let tone = "muted";
+    let key = "settings.twitcastingApiMissing";
+    if (clientID && clientSecret) {
+        tone = "running";
+        key = "settings.twitcastingApiConfigured";
+    } else if (clientID || clientSecret) {
+        tone = "stopping";
+        key = "settings.twitcastingApiIncomplete";
+    }
+
+    ui.twitcastingApiStatusSummary.className = `badge ${tone}`;
+    ui.twitcastingApiStatusSummary.textContent = t(key);
 }
 
 function renderStreamers(streamers) {
@@ -965,8 +1120,7 @@ function closeStreamerModal() {
     streamerModalState.initialScreenId = "";
     streamerModalState.verifiedScreenId = "";
     setStreamerValidationState("muted", "");
-    ui.streamerModal.hidden = true;
-    document.body.classList.remove("modal-open");
+    closeModalShell(ui.streamerModal);
 }
 
 function openStreamerGuideModal() {
@@ -974,14 +1128,28 @@ function openStreamerGuideModal() {
 }
 
 function closeStreamerGuideModal() {
-    ui.streamerGuideModal.hidden = true;
-    document.body.classList.remove("modal-open");
+    closeModalShell(ui.streamerGuideModal);
+}
+
+function openTwitcastingAccessModal() {
+    openModalShell(ui.twitcastingAccessModal, ui.twitcastingClientIdInput);
+}
+
+function closeTwitcastingAccessModal() {
+    closeModalShell(ui.twitcastingAccessModal);
 }
 
 function openModalShell(element, focusTarget) {
     element.hidden = false;
     document.body.classList.add("modal-open");
     window.setTimeout(() => focusTarget?.focus(), 0);
+}
+
+function closeModalShell(element) {
+    element.hidden = true;
+    if (!document.querySelector(".modal-shell:not([hidden])")) {
+        document.body.classList.remove("modal-open");
+    }
 }
 
 function updateStreamerModalCopy() {
@@ -1224,6 +1392,10 @@ function formatScheduleDisplay(schedule) {
 
 function handleGlobalKeydown(event) {
     if (event.key !== "Escape") {
+        return;
+    }
+    if (!ui.twitcastingAccessModal.hidden) {
+        closeTwitcastingAccessModal();
         return;
     }
     if (!ui.streamerModal.hidden) {

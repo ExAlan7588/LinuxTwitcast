@@ -497,21 +497,23 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePositiveInt(r.URL.Query().Get("limit"), 200, 500)
+	alertLimit := parsePositiveInt(r.URL.Query().Get("alert_limit"), 8, 50)
 	hideOffline := r.URL.Query().Get("hide_offline") == "1"
-	if hideOffline {
-		lines, filteredCount := applog.RecentLinesFiltered(limit, func(line string) bool {
-			return !isOfflinePollingLogLine(line)
-		})
-		s.writeJSON(w, map[string]any{
-			"lines":          lines,
-			"filtered_count": filteredCount,
-		})
-		return
-	}
+	errorsOnly := r.URL.Query().Get("errors_only") == "1"
+	lines, filteredCount := applog.RecentLinesFiltered(limit, func(line string) bool {
+		if hideOffline && isOfflinePollingLogLine(line) {
+			return false
+		}
+		if errorsOnly && !applog.IsAlertLine(line) {
+			return false
+		}
+		return true
+	})
 
 	s.writeJSON(w, map[string]any{
-		"lines":          applog.RecentLines(limit),
-		"filtered_count": 0,
+		"lines":          lines,
+		"filtered_count": filteredCount,
+		"alert_lines":    applog.RecentAlertLines(alertLimit),
 	})
 }
 
@@ -885,7 +887,7 @@ func (s *Server) buildDiagnostics(app config.AppConfig, telegramCfg telegram.Con
 			add("warn", message)
 
 		case "stream_member_only":
-			message := fmt.Sprintf("Streamer [%s] 目前是會員限定直播。Discord 仍會通知，但系統不會嘗試錄製，因此不會顯示在進行中的錄影列表。", warning.Streamer)
+			message := fmt.Sprintf("Streamer [%s] 目前是會員限定直播。Discord 仍會通知，但系統不會嘗試錄製，因此不會顯示在進行或下載中的錄影列表。", warning.Streamer)
 			add("info", message)
 		}
 	}
@@ -972,8 +974,10 @@ func telegramCaption(name string) string {
 }
 
 func isOfflinePollingLogLine(line string) bool {
-	return strings.Contains(line, "Error fetching stream URL for streamer [") &&
-		strings.Contains(line, "live stream is offline")
+	return (strings.Contains(line, "Error fetching stream URL for streamer [") &&
+		strings.Contains(line, "live stream is offline")) ||
+		(strings.Contains(line, "[Info] Streamer [") &&
+			strings.Contains(line, "is currently offline; skipping this polling round"))
 }
 
 // IsPublicListen checks whether the bind address is publicly reachable and should be treated as a security-sensitive bind target.

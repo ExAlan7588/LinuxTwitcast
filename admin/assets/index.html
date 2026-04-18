@@ -47,8 +47,8 @@
                 </div>
                 <div id="recorderSummary" class="summary-grid"></div>
                 <div class="subsection">
-                    <h3 data-i18n="status.activeRecordings">Active Recordings</h3>
-                    <div id="activeRecordings" class="stack muted-text">No active recordings.</div>
+                    <h3 data-i18n="status.activeRecordings">Active Recordings / Downloads</h3>
+                    <div id="activeRecordings" class="stack muted-text">No active recordings or downloads.</div>
                 </div>
                 <div class="subsection">
                     <div class="section-head compact">
@@ -86,6 +86,7 @@
                 <h2 data-i18n="settings.section">General &amp; Streamer Settings</h2>
                 <div class="inline-actions streamer-actions">
                     <span class="section-note" data-i18n="settings.addStreamerHint">Need help? Open the field guide first.</span>
+                    <button id="openTwitcastingAccessModalBtn" class="ghost small" type="button" data-i18n="settings.twitcastingAccessManage">TwitCasting Access</button>
                     <button id="streamerGuideBtn" class="ghost small" type="button" data-i18n="settings.streamerGuide">Field Guide</button>
                     <button id="addStreamerBtn" class="ghost" type="button" data-i18n="settings.addStreamer">Add Streamer</button>
                 </div>
@@ -105,52 +106,15 @@
             </div>
 
             <div class="subsection">
-                <h3 data-i18n="settings.twitcastingApiSection">TwitCasting API (optional)</h3>
-                <p class="section-note" data-i18n="twitcasting.help">Use an official TwitCasting Client ID / Client Secret for more reliable profile lookups and higher-quality avatar URLs.</p>
-                <p class="field-help helper-note" data-i18n="twitcasting.getCredentials">To get a Client ID / Client Secret, sign in to your TwitCasting account and create a new app from the official Developer Page.</p>
-                <p class="field-help helper-note helper-links">
-                    <a href="https://twitcasting.tv/developer.php" target="_blank" rel="noreferrer noopener" data-i18n="twitcasting.developerPageLink">Open Developer Page</a>
-                    <span aria-hidden="true">·</span>
-                    <a href="https://apiv2-doc.twitcasting.tv/" target="_blank" rel="noreferrer noopener" data-i18n="twitcasting.apiDocsLink">APIv2 Documentation</a>
-                </p>
-                <div class="form-grid">
-                    <label>
-                        <span data-i18n="twitcasting.clientId">Client ID</span>
-                        <input id="twitcastingClientIdInput" type="text" autocomplete="off">
-                        <small class="field-help" data-i18n="twitcasting.clientIdHelp">This is the public app ID for TwitCasting's official API. It only helps this console look up streamer profile data, and must be paired with Client Secret.</small>
-                    </label>
-                    <label>
-                        <span data-i18n="twitcasting.clientSecret">Client Secret</span>
-                        <input id="twitcastingClientSecretInput" type="password" autocomplete="new-password">
-                        <small class="field-help" data-i18n="twitcasting.clientSecretHelp">This is the private key paired with the Client ID. Leave both fields empty if you do not use the official API, and do not share this secret publicly.</small>
-                    </label>
-                </div>
-            </div>
-
-            <div class="subsection">
                 <div class="section-head compact">
-                    <h3 data-i18n="settings.twitcastingAuthSection">TwitCasting Login Cookie</h3>
+                    <h3 data-i18n="settings.twitcastingAccessSection">TwitCasting Access</h3>
                     <div class="inline-actions">
-                        <span id="twitcastingCookieStatus" class="badge muted" data-i18n="twitcasting.cookieMissing">Not configured</span>
-                        <button id="twitcastingCookieClearBtn" class="ghost small" type="button" data-i18n="twitcasting.cookieClear">Clear Cookie</button>
+                        <span id="twitcastingApiStatusSummary" class="badge muted" data-i18n="settings.twitcastingApiMissing">API not set</span>
+                        <span id="twitcastingCookieStatusSummary" class="badge muted" data-i18n="twitcasting.cookieMissing">Not configured</span>
+                        <button id="openTwitcastingAccessInlineBtn" class="ghost small" type="button" data-i18n="settings.twitcastingAccessManage">TwitCasting Access</button>
                     </div>
                 </div>
-                <p class="section-note" data-i18n="twitcasting.authHelp">Upload a browser-exported cookie so this recorder can access members-only lives with your signed-in session.</p>
-                <div class="form-grid">
-                    <label>
-                        <span data-i18n="twitcasting.cookieFile">Cookie File</span>
-                        <input id="twitcastingCookieFileInput" type="file" accept=".txt,.cookies,.cookie">
-                        <small class="field-help" data-i18n="twitcasting.cookieFileHelp">Upload a Netscape cookie file or a text file that contains a full Cookie header.</small>
-                    </label>
-                    <label>
-                        <span data-i18n="twitcasting.cookieText">Cookie Text</span>
-                        <textarea id="twitcastingCookieTextInput" rows="4" spellcheck="false" placeholder="Cookie: tc_ss=...; tc_id=..."></textarea>
-                        <small class="field-help" data-i18n="twitcasting.cookieTextHelp">Optional fallback: paste the Cookie header here if you are not uploading a file.</small>
-                    </label>
-                </div>
-                <div class="inline-actions">
-                    <button id="twitcastingCookieUploadBtn" class="ghost small" type="button" data-i18n="twitcasting.cookieUpload">Upload Cookie</button>
-                </div>
+                <p class="section-note" data-i18n="settings.twitcastingAccessHelp">Keep API credentials and login cookie in a dedicated panel so streamer settings stay focused.</p>
             </div>
 
             <div class="table-wrap">
@@ -278,10 +242,20 @@
                             <input id="hideOfflineLogsInput" type="checkbox" checked>
                             <span data-i18n="logs.hideOffline">Hide offline polling</span>
                         </label>
+                        <label class="checkbox compact-toggle">
+                            <input id="errorsOnlyLogsInput" type="checkbox">
+                            <span data-i18n="logs.errorsOnly">Only show Error/Fatal</span>
+                        </label>
                         <button id="logsRefreshBtn" class="ghost" data-i18n="actions.refresh">Refresh</button>
                     </div>
                 </div>
                 <div id="logsSummary" class="logs-summary muted-text"></div>
+                <div class="subsection log-alerts-section">
+                    <div class="section-head compact">
+                        <h3 data-i18n="logs.alertsSection">Error / Fatal 摘要</h3>
+                    </div>
+                    <div id="logAlerts" class="stack muted-text">目前沒有 Error / Fatal 摘要。</div>
+                </div>
                 <pre id="logsPanel" class="console">Loading...</pre>
             </article>
         </section>
@@ -369,6 +343,67 @@
                 </div>
             </div>
             <p class="muted-text helper-note" data-i18n="streamer.guideSaveNote">After changing the streamer list, click Save Settings on the main page to write it to disk.</p>
+        </div>
+    </div>
+
+    <div id="twitcastingAccessModal" class="modal-shell" hidden>
+        <div id="twitcastingAccessModalBackdrop" class="modal-backdrop"></div>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="twitcastingAccessTitle">
+            <div class="section-head compact">
+                <h3 id="twitcastingAccessTitle" data-i18n="settings.twitcastingAccessSection">TwitCasting Access</h3>
+                <div class="inline-actions">
+                    <span id="twitcastingCookieStatus" class="badge muted" data-i18n="twitcasting.cookieMissing">Not configured</span>
+                    <button id="closeTwitcastingAccessModalBtn" class="ghost small" type="button" data-i18n="common.close">Close</button>
+                </div>
+            </div>
+
+            <div class="subsection">
+                <h3 data-i18n="settings.twitcastingApiSection">TwitCasting API (optional)</h3>
+                <p class="section-note" data-i18n="twitcasting.help">Use an official TwitCasting Client ID / Client Secret for more reliable profile lookups and higher-quality avatar URLs.</p>
+                <p class="field-help helper-note" data-i18n="twitcasting.getCredentials">To get a Client ID / Client Secret, sign in to your TwitCasting account and create a new app from the official Developer Page.</p>
+                <p class="field-help helper-note helper-links">
+                    <a href="https://twitcasting.tv/developer.php" target="_blank" rel="noreferrer noopener" data-i18n="twitcasting.developerPageLink">Open Developer Page</a>
+                    <span aria-hidden="true">·</span>
+                    <a href="https://apiv2-doc.twitcasting.tv/" target="_blank" rel="noreferrer noopener" data-i18n="twitcasting.apiDocsLink">APIv2 Documentation</a>
+                </p>
+                <div class="form-grid">
+                    <label>
+                        <span data-i18n="twitcasting.clientId">Client ID</span>
+                        <input id="twitcastingClientIdInput" type="text" autocomplete="off">
+                        <small class="field-help" data-i18n="twitcasting.clientIdHelp">This is the public app ID for TwitCasting's official API. It only helps this console look up streamer profile data, and must be paired with Client Secret.</small>
+                    </label>
+                    <label>
+                        <span data-i18n="twitcasting.clientSecret">Client Secret</span>
+                        <input id="twitcastingClientSecretInput" type="password" autocomplete="new-password">
+                        <small class="field-help" data-i18n="twitcasting.clientSecretHelp">This is the private key paired with the Client ID. Leave both fields empty if you do not use the official API, and do not share this secret publicly.</small>
+                    </label>
+                </div>
+            </div>
+
+            <div class="subsection">
+                <div class="section-head compact">
+                    <h3 data-i18n="settings.twitcastingAuthSection">TwitCasting Login Cookie</h3>
+                    <div class="inline-actions">
+                        <button id="twitcastingCookieClearBtn" class="ghost small" type="button" data-i18n="twitcasting.cookieClear">Clear Cookie</button>
+                    </div>
+                </div>
+                <p class="section-note" data-i18n="twitcasting.authHelp">Upload a browser-exported cookie so this recorder can access members-only lives with your signed-in session.</p>
+                <div class="form-grid">
+                    <label>
+                        <span data-i18n="twitcasting.cookieFile">Cookie File</span>
+                        <input id="twitcastingCookieFileInput" type="file" accept=".txt,.cookies,.cookie">
+                        <small class="field-help" data-i18n="twitcasting.cookieFileHelp">Upload a Netscape cookie file or a text file that contains a full Cookie header.</small>
+                    </label>
+                    <label>
+                        <span data-i18n="twitcasting.cookieText">Cookie Text</span>
+                        <textarea id="twitcastingCookieTextInput" rows="4" spellcheck="false" placeholder="Cookie: tc_ss=...; tc_id=..."></textarea>
+                        <small class="field-help" data-i18n="twitcasting.cookieTextHelp">Optional fallback: paste the Cookie header here if you are not uploading a file.</small>
+                    </label>
+                </div>
+                <div class="inline-actions">
+                    <button id="twitcastingCookieUploadBtn" class="ghost small" type="button" data-i18n="twitcasting.cookieUpload">Upload Cookie</button>
+                </div>
+            </div>
         </div>
     </div>
 

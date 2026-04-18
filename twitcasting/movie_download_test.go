@@ -46,6 +46,9 @@ func TestPrepareMovieDownloadReadsPlaylistFromMoviePage(t *testing.T) {
 	if len(info.PlaylistURLs) != 1 || info.PlaylistURLs[0] != "https://dl.example.test/master.m3u8" {
 		t.Fatalf("PlaylistURLs = %#v", info.PlaylistURLs)
 	}
+	if len(info.PlaylistDurations) != 1 || info.PlaylistDurations[0] != time.Second {
+		t.Fatalf("PlaylistDurations = %#v", info.PlaylistDurations)
+	}
 	wantStartedAt := time.Unix(1776441152, 0)
 	if !info.StartedAt.Equal(wantStartedAt) {
 		t.Fatalf("StartedAt = %v, want %v", info.StartedAt, wantStartedAt)
@@ -178,5 +181,34 @@ func TestDownloadMovieArchiveRequiresFFmpeg(t *testing.T) {
 	_, err := DownloadMovieArchive(MovieDownloadInfo{ScreenID: "mielu_ii", PlaylistURLs: []string{"https://dl.example.test/master.m3u8"}}, t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "ffmpeg is not available in PATH") {
 		t.Fatalf("DownloadMovieArchive() error = %v, want ffmpeg missing error", err)
+	}
+}
+
+func TestBuildMovieDownloadProgressUsesPlaylistDurations(t *testing.T) {
+	info := MovieDownloadInfo{
+		PlaylistURLs:      []string{"https://dl.example.test/part1.m3u8", "https://dl.example.test/part2.m3u8"},
+		PlaylistDurations: []time.Duration{2 * time.Second, 2 * time.Second},
+	}
+
+	progress := buildMovieDownloadProgress(info, 1, "Recordings/mielu/movie.part2.mp4", 2*time.Second, time.Second, 4*time.Second)
+	if progress.PartIndex != 1 || progress.PartCount != 2 {
+		t.Fatalf("progress part = %d/%d", progress.PartIndex, progress.PartCount)
+	}
+	if progress.OutputPath != "Recordings/mielu/movie.part2.mp4" {
+		t.Fatalf("progress output = %q", progress.OutputPath)
+	}
+	if progress.ProgressPercent != 75 {
+		t.Fatalf("progress percent = %v, want 75", progress.ProgressPercent)
+	}
+}
+
+func TestParseFFmpegProgressDuration(t *testing.T) {
+	got, ok := parseFFmpegProgressDuration("out_time=00:01:02.500000")
+	if !ok {
+		t.Fatal("expected ffmpeg progress line to parse")
+	}
+	want := time.Minute + 2*time.Second + 500*time.Millisecond
+	if got != want {
+		t.Fatalf("duration = %v, want %v", got, want)
 	}
 }

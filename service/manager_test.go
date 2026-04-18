@@ -52,3 +52,45 @@ func TestShouldSkipStreamerExpiresAfterRetryTime(t *testing.T) {
 		t.Fatal("expected expired cooldown to stop skipping streamer")
 	}
 }
+
+func TestStatusIncludesActiveDownloads(t *testing.T) {
+	manager := NewManager()
+	info := twitcasting.MovieDownloadInfo{
+		ScreenID:     "mielu_ii",
+		MovieID:      "833944593",
+		StreamerName: "ミエル",
+		Title:        "會員回放 ／ Test",
+		PlaylistURLs: []string{"https://dl.example.test/master.m3u8"},
+	}
+
+	if err := manager.handleDownloadStart("mielu_ii|833944593", info, "Recordings/mielu_ii"); err != nil {
+		t.Fatalf("handleDownloadStart() error = %v", err)
+	}
+	manager.handleDownloadProgress("mielu_ii|833944593", twitcasting.MovieDownloadProgress{
+		PartIndex:       0,
+		PartCount:       1,
+		OutputPath:      "Recordings/mielu_ii/[ミエル][2026-04-17]會員回放 ／ Test.mp4",
+		ProgressPercent: 42.5,
+	})
+
+	status := manager.Status()
+	if len(status.ActiveDownloads) != 1 {
+		t.Fatalf("len(status.ActiveDownloads) = %d, want 1", len(status.ActiveDownloads))
+	}
+	active := status.ActiveDownloads[0]
+	if active.Streamer != "mielu_ii" {
+		t.Fatalf("active.Streamer = %q", active.Streamer)
+	}
+	if active.MovieID != "833944593" {
+		t.Fatalf("active.MovieID = %q", active.MovieID)
+	}
+	if active.CurrentPart != 1 || active.TotalParts != 1 {
+		t.Fatalf("active part = %d/%d", active.CurrentPart, active.TotalParts)
+	}
+	if active.ProgressPercent != 42.5 {
+		t.Fatalf("active.ProgressPercent = %v, want 42.5", active.ProgressPercent)
+	}
+	if active.CurrentFile != "[ミエル][2026-04-17]會員回放 ／ Test.mp4" {
+		t.Fatalf("active.CurrentFile = %q", active.CurrentFile)
+	}
+}

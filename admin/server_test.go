@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jzhang046/croned-twitcasting-recorder/applog"
 	"github.com/jzhang046/croned-twitcasting-recorder/service"
 	"github.com/jzhang046/croned-twitcasting-recorder/telegram"
 	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
@@ -431,6 +433,52 @@ func TestHandleStreamerCheckRejectsBlankScreenID(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleLogsSupportsErrorsOnlyAndAlertSummary(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	if err := applog.Configure(false); err != nil {
+		t.Fatalf("Configure(false) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = applog.Close()
+	})
+
+	log.Println("[Info] Streamer [mielu_ii] is currently offline; skipping this polling round")
+	log.Println("[Error] ffmpeg exploded")
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?limit=1&alert_limit=1&hide_offline=1&errors_only=1", nil)
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var payload struct {
+		Lines         []string `json:"lines"`
+		FilteredCount int      `json:"filtered_count"`
+		AlertLines    []string `json:"alert_lines"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal logs payload: %v", err)
+	}
+	if len(payload.Lines) != 1 || !strings.Contains(payload.Lines[0], "[Error] ffmpeg exploded") {
+		t.Fatalf("unexpected filtered lines: %#v", payload.Lines)
+	}
+	if payload.FilteredCount < 1 {
+		t.Fatalf("expected filtered_count >= 1, got %d", payload.FilteredCount)
+	}
+	if len(payload.AlertLines) != 1 || !strings.Contains(payload.AlertLines[0], "[Error] ffmpeg exploded") {
+		t.Fatalf("unexpected alert_lines: %#v", payload.AlertLines)
 	}
 }
 

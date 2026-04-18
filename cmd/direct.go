@@ -55,6 +55,7 @@ func RecordDirect(args []string) {
 		record.ToRecordFunc(&record.RecordConfig{
 			Streamer:         *streamer,
 			StreamUrlFetcher: twitcasting.GetWSStreamUrl,
+			LookupLogger:     twitcasting.LogStreamLookupOutcome,
 			SinkProvider:     sink.NewFileSink,
 			StreamRecorder:   twitcasting.RecordWS,
 			RootContext:      interruptCtx,

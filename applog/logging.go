@@ -9,18 +9,20 @@ import (
 )
 
 const defaultMaxLines = 2000
+const defaultMaxAlertLines = 400
 
 var (
-	configMu   sync.Mutex
-	buffer     = newRingBuffer(defaultMaxLines)
-	currentLog *os.File
+	configMu        sync.Mutex
+	alertFileMu     sync.Mutex
+	capture         = newLogCapture(defaultMaxLines, defaultMaxAlertLines)
+	currentLog      *os.File
+	currentAlertLog *os.File
 )
 
 type ringBuffer struct {
-	mu      sync.RWMutex
-	lines   []string
-	max     int
-	partial string
+	mu    sync.RWMutex
+	lines []string
+	max   int
 }
 
 func newRingBuffer(max int) *ringBuffer {
@@ -30,28 +32,18 @@ func newRingBuffer(max int) *ringBuffer {
 	}
 }
 
-func (r *ringBuffer) Write(p []byte) (int, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+type logCapture struct {
+	mu      sync.Mutex
+	lines   *ringBuffer
+	alerts  *ringBuffer
+	partial string
+}
 
-	chunk := strings.ReplaceAll(string(p), "\r\n", "\n")
-	chunk = strings.ReplaceAll(chunk, "\r", "\n")
-	text := r.partial + chunk
-	parts := strings.Split(text, "\n")
-
-	if strings.HasSuffix(text, "\n") {
-		r.partial = ""
-		parts = parts[:len(parts)-1]
-	} else {
-		r.partial = parts[len(parts)-1]
-		parts = parts[:len(parts)-1]
+func newLogCapture(maxLines, maxAlerts int) *logCapture {
+	return &logCapture{
+		lines:  newRingBuffer(maxLines),
+		alerts: newRingBuffer(maxAlerts),
 	}
-
-	for _, line := range parts {
-		r.push(line)
-	}
-
-	return len(p), nil
 }
 
 func (r *ringBuffer) Lines(limit int) []string {
@@ -65,11 +57,6 @@ func (r *ringBuffer) Lines(limit int) []string {
 	start := len(r.lines) - limit
 	snapshot := make([]string, limit)
 	copy(snapshot, r.lines[start:])
-
-	if r.partial != "" {
-		snapshot = append(snapshot, r.partial)
-	}
-
 	return snapshot
 }
 
@@ -77,11 +64,8 @@ func (r *ringBuffer) FilteredLines(limit int, keep func(string) bool) ([]string,
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	candidates := make([]string, 0, len(r.lines)+1)
+	candidates := make([]string, 0, len(r.lines))
 	candidates = append(candidates, r.lines...)
-	if r.partial != "" {
-		candidates = append(candidates, r.partial)
-	}
 
 	filteredCount := 0
 	kept := make([]string, 0, len(candidates))
@@ -104,6 +88,9 @@ func (r *ringBuffer) FilteredLines(limit int, keep func(string) bool) ([]string,
 }
 
 func (r *ringBuffer) push(line string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if len(r.lines) == r.max {
 		copy(r.lines, r.lines[1:])
 		r.lines[len(r.lines)-1] = line
@@ -112,16 +99,90 @@ func (r *ringBuffer) push(line string) {
 	r.lines = append(r.lines, line)
 }
 
+func (c *logCapture) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	chunk := strings.ReplaceAll(string(p), "\r\n", "\n")
+	chunk = strings.ReplaceAll(chunk, "\r", "\n")
+	text := c.partial + chunk
+	parts := strings.Split(text, "\n")
+
+	if strings.HasSuffix(text, "\n") {
+		c.partial = ""
+		parts = parts[:len(parts)-1]
+	} else {
+		c.partial = parts[len(parts)-1]
+		parts = parts[:len(parts)-1]
+	}
+
+	for _, line := range parts {
+		c.lines.push(line)
+		if IsAlertLine(line) {
+			c.alerts.push(line)
+			writeAlertLogLine(line)
+		}
+	}
+
+	return len(p), nil
+}
+
+func (c *logCapture) Lines(limit int) []string {
+	lines := c.lines.Lines(limit)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.partial != "" {
+		lines = append(lines, c.partial)
+	}
+	return lines
+}
+
+func (c *logCapture) FilteredLines(limit int, keep func(string) bool) ([]string, int) {
+	lines := c.lines.Lines(0)
+	c.mu.Lock()
+	partial := c.partial
+	c.mu.Unlock()
+	if partial != "" {
+		lines = append(lines, partial)
+	}
+
+	filteredCount := 0
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if keep != nil && !keep(line) {
+			filteredCount++
+			continue
+		}
+		kept = append(kept, line)
+	}
+
+	if limit <= 0 || limit > len(kept) {
+		limit = len(kept)
+	}
+
+	start := len(kept) - limit
+	snapshot := make([]string, limit)
+	copy(snapshot, kept[start:])
+	return snapshot, filteredCount
+}
+
+func (c *logCapture) AlertLines(limit int) []string {
+	return c.alerts.Lines(limit)
+}
+
 func Configure(enableFile bool) error {
 	configMu.Lock()
 	defer configMu.Unlock()
 
-	if currentLog != nil {
-		_ = currentLog.Close()
-		currentLog = nil
-	}
+	closeOpenFilesLocked()
 
-	writers := []io.Writer{os.Stdout, buffer}
+	alertFile, err := os.OpenFile("error.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	currentAlertLog = alertFile
+
+	writers := []io.Writer{os.Stdout, capture}
 	if enableFile {
 		file, err := os.OpenFile("app.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 		if err != nil {
@@ -139,10 +200,59 @@ func ConfigureFromEnv() error {
 	return Configure(os.Getenv("TWITCAST_LOG_CONSOLE") == "1")
 }
 
+func Close() error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	return closeOpenFilesLocked()
+}
+
 func RecentLines(limit int) []string {
-	return buffer.Lines(limit)
+	return capture.Lines(limit)
 }
 
 func RecentLinesFiltered(limit int, keep func(string) bool) ([]string, int) {
-	return buffer.FilteredLines(limit, keep)
+	return capture.FilteredLines(limit, keep)
+}
+
+func RecentAlertLines(limit int) []string {
+	return capture.AlertLines(limit)
+}
+
+func IsAlertLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "[error]") ||
+		strings.HasPrefix(lower, "error ") ||
+		strings.Contains(lower, " error ") ||
+		strings.Contains(lower, "fatal") ||
+		strings.Contains(lower, "panic") ||
+		strings.Contains(lower, "failed")
+}
+
+func writeAlertLogLine(line string) {
+	alertFileMu.Lock()
+	defer alertFileMu.Unlock()
+	if currentAlertLog == nil {
+		return
+	}
+	_, _ = currentAlertLog.WriteString(line + "\n")
+}
+
+func closeOpenFilesLocked() error {
+	var firstErr error
+	if currentLog != nil {
+		if err := currentLog.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		currentLog = nil
+	}
+	if currentAlertLog != nil {
+		if err := currentAlertLog.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		currentAlertLog = nil
+	}
+	return firstErr
 }

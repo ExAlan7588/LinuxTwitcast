@@ -113,6 +113,27 @@ func TestBuildM4AArgsIncludesMetadataAndCover(t *testing.T) {
 	}
 }
 
+func TestSessionCoverArtURLPrefersAvatarOverStreamCover(t *testing.T) {
+	session := record.SessionInfo{
+		AvatarURL: "https://example.test/avatar.jpg",
+		CoverURL:  "https://example.test/stream-cover.jpg",
+	}
+
+	if got := sessionCoverArtURL(session); got != "https://example.test/avatar.jpg" {
+		t.Fatalf("sessionCoverArtURL() = %q, want avatar URL", got)
+	}
+}
+
+func TestSessionCoverArtURLFallsBackToStreamCover(t *testing.T) {
+	session := record.SessionInfo{
+		CoverURL: "https://example.test/stream-cover.jpg",
+	}
+
+	if got := sessionCoverArtURL(session); got != "https://example.test/stream-cover.jpg" {
+		t.Fatalf("sessionCoverArtURL() = %q, want cover URL", got)
+	}
+}
+
 func TestProcessRetriesConversionStrategiesAfterCopyFailure(t *testing.T) {
 	originalRunFFmpeg := runFFmpeg
 	originalUploadTelegramFile := uploadTelegramFile

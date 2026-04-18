@@ -31,6 +31,7 @@ type RecordConfig struct {
 	Folder           string
 	Password         string
 	StreamUrlFetcher func(string) (StreamLookupResult, error)
+	LookupLogger     func(string, StreamLookupResult, error)
 	SinkProvider     func(RecordContext) (Sink, error)
 	StreamRecorder   func(RecordContext, chan<- []byte)
 	RootContext      context.Context
@@ -68,11 +69,18 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 		if recordConfig.OnStreamLookup != nil {
 			recordConfig.OnStreamLookup(streamer, err)
 		}
+		if recordConfig.LookupLogger != nil {
+			recordConfig.LookupLogger(streamer, lookup, err)
+		}
 		if err != nil {
-			log.Printf("Error fetching stream URL for streamer [%s]: %v\n", streamer, err)
+			if recordConfig.LookupLogger == nil {
+				log.Printf("Error fetching stream URL for streamer [%s]: %v\n", streamer, err)
+			}
 			return
 		}
-		log.Printf("Fetched stream URL for streamer [%s]: %s\n", streamer, lookup.StreamURL)
+		if recordConfig.LookupLogger == nil {
+			log.Printf("Fetched stream URL for streamer [%s]: %s\n", streamer, lookup.StreamURL)
+		}
 		recordCtx := newRecordContext(recordConfig.RootContext, streamer, lookup.StreamURL, lookup.StreamerName, lookup.Title, recordConfig.Folder, recordConfig.Password)
 
 		sink, err := recordConfig.SinkProvider(recordCtx)

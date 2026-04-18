@@ -271,10 +271,10 @@ func sessionDate(session record.SessionInfo) time.Time {
 }
 
 func sessionCoverArtURL(session record.SessionInfo) string {
-	if coverURL := strings.TrimSpace(session.CoverURL); coverURL != "" {
-		return coverURL
+	if avatarURL := strings.TrimSpace(session.AvatarURL); avatarURL != "" {
+		return avatarURL
 	}
-	return strings.TrimSpace(session.AvatarURL)
+	return strings.TrimSpace(session.CoverURL)
 }
 
 // 封面下载失败不应阻塞上传；这里尽量拿到临时图片给 ffmpeg 写 attached_pic，失败就回退成纯音频标签。

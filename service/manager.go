@@ -32,8 +32,22 @@ type Status struct {
 	EnabledStreamers int                  `json:"enabled_streamers"`
 	ScheduledJobs    int                  `json:"scheduled_jobs"`
 	ActiveRecordings []record.SessionInfo `json:"active_recordings"`
+	ActiveDownloads  []ActiveDownload     `json:"active_downloads,omitempty"`
 	Warnings         []Warning            `json:"warnings,omitempty"`
 	LastError        string               `json:"last_error,omitempty"`
+}
+
+type ActiveDownload struct {
+	Streamer        string    `json:"streamer"`
+	StreamerName    string    `json:"streamer_name"`
+	Title           string    `json:"title"`
+	MovieID         string    `json:"movie_id,omitempty"`
+	Folder          string    `json:"folder"`
+	CurrentFile     string    `json:"current_file,omitempty"`
+	CurrentPart     int       `json:"current_part"`
+	TotalParts      int       `json:"total_parts"`
+	ProgressPercent float64   `json:"progress_percent"`
+	StartedAt       time.Time `json:"started_at"`
 }
 
 type Warning struct {
@@ -74,6 +88,7 @@ type Manager struct {
 	enabledStreamers int
 	scheduledJobs    int
 	active           map[string]record.SessionInfo
+	activeDownloads  map[string]ActiveDownload
 	warnings         map[string]streamWarning
 	memberOnly       map[string]memberOnlyNotification
 	discordCfg       discord.Config
@@ -89,9 +104,10 @@ const (
 
 func NewManager() *Manager {
 	return &Manager{
-		active:     make(map[string]record.SessionInfo),
-		warnings:   make(map[string]streamWarning),
-		memberOnly: make(map[string]memberOnlyNotification),
+		active:          make(map[string]record.SessionInfo),
+		activeDownloads: make(map[string]ActiveDownload),
+		warnings:        make(map[string]streamWarning),
+		memberOnly:      make(map[string]memberOnlyNotification),
 	}
 }
 
@@ -196,6 +212,7 @@ func (m *Manager) Start() error {
 	m.enabledStreamers = enabledStreamers
 	m.scheduledJobs = scheduledJobs
 	m.active = make(map[string]record.SessionInfo)
+	m.activeDownloads = make(map[string]ActiveDownload)
 	m.warnings = make(map[string]streamWarning)
 	m.memberOnly = make(map[string]memberOnlyNotification)
 	m.discordCfg = discordCfg
@@ -241,14 +258,26 @@ func (m *Manager) StartManualRecording(rawURL string) (ManualRecordResult, error
 			return result, downloadErr
 		}
 
+		downloadKey := manualDownloadKey(target.ScreenID, target.MovieID)
+		if err := m.handleDownloadStart(downloadKey, downloadInfo, streamerCfg.Folder); err != nil {
+			m.storeError(err)
+			return result, err
+		}
+
+		screenID := target.ScreenID
+		movieID := target.MovieID
 		go func() {
-			outputs, runErr := twitcasting.DownloadMovieArchive(downloadInfo, streamerCfg.Folder)
+			defer m.handleDownloadEnd(downloadKey)
+
+			outputs, runErr := twitcasting.DownloadMovieArchiveWithProgress(downloadInfo, streamerCfg.Folder, func(progress twitcasting.MovieDownloadProgress) {
+				m.handleDownloadProgress(downloadKey, progress)
+			})
 			if runErr != nil {
-				log.Printf("[Manual] Archived movie download failed for [%s] movie [%s]: %v\n", target.ScreenID, target.MovieID, runErr)
+				log.Printf("[Manual] Archived movie download failed for [%s] movie [%s]: %v\n", screenID, movieID, runErr)
 				m.storeError(runErr)
 				return
 			}
-			log.Printf("[Manual] Archived movie download completed for [%s] movie [%s]: %s\n", target.ScreenID, target.MovieID, strings.Join(outputs, ", "))
+			log.Printf("[Manual] Archived movie download completed for [%s] movie [%s]: %s\n", screenID, movieID, strings.Join(outputs, ", "))
 		}()
 		return result, nil
 	}
@@ -374,6 +403,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.enabledStreamers = 0
 	m.scheduledJobs = 0
 	m.active = make(map[string]record.SessionInfo)
+	m.activeDownloads = make(map[string]ActiveDownload)
 	m.warnings = make(map[string]streamWarning)
 	m.memberOnly = make(map[string]memberOnlyNotification)
 	m.discordCfg = discord.Config{}
@@ -404,6 +434,14 @@ func (m *Manager) Status() Status {
 		return active[i].StartedAt.Before(active[j].StartedAt)
 	})
 
+	activeDownloads := make([]ActiveDownload, 0, len(m.activeDownloads))
+	for _, download := range m.activeDownloads {
+		activeDownloads = append(activeDownloads, download)
+	}
+	sort.Slice(activeDownloads, func(i, j int) bool {
+		return activeDownloads[i].StartedAt.Before(activeDownloads[j].StartedAt)
+	})
+
 	warnings := make([]Warning, 0, len(m.warnings))
 	for streamer, warning := range m.warnings {
 		warnings = append(warnings, Warning{
@@ -424,6 +462,7 @@ func (m *Manager) Status() Status {
 		EnabledStreamers: m.enabledStreamers,
 		ScheduledJobs:    m.scheduledJobs,
 		ActiveRecordings: active,
+		ActiveDownloads:  activeDownloads,
 		Warnings:         warnings,
 		LastError:        m.lastError,
 	}
@@ -460,6 +499,7 @@ func (m *Manager) newRecordFunc(
 		Folder:           streamerCfg.Folder,
 		Password:         streamerCfg.Password,
 		StreamUrlFetcher: streamURLFetcher,
+		LookupLogger:     twitcasting.LogStreamLookupOutcome,
 		SinkProvider:     sink.NewFileSink,
 		StreamRecorder:   twitcasting.RecordWS,
 		RootContext:      rootCtx,
@@ -482,6 +522,80 @@ func (m *Manager) handleSessionEnd(session record.SessionInfo) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.active, session.Streamer)
+}
+
+func (m *Manager) handleDownloadStart(key string, info twitcasting.MovieDownloadInfo, folder string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.activeDownloads[key]; exists {
+		return fmt.Errorf("movie [%s] for streamer [%s] is already downloading", strings.TrimSpace(info.MovieID), strings.TrimSpace(info.ScreenID))
+	}
+
+	targetFolder := strings.TrimSpace(folder)
+	if targetFolder == "" {
+		targetFolder = filepath.Join("Recordings", strings.TrimSpace(info.ScreenID))
+	}
+
+	currentFile := ""
+	if plannedOutputs := twitcasting.PlannedMovieDownloadOutputs(info, targetFolder); len(plannedOutputs) > 0 {
+		currentFile = filepath.Base(plannedOutputs[0])
+	}
+
+	totalParts := len(info.PlaylistURLs)
+	currentPart := 0
+	if totalParts > 0 {
+		currentPart = 1
+	}
+
+	m.activeDownloads[key] = ActiveDownload{
+		Streamer:        strings.TrimSpace(info.ScreenID),
+		StreamerName:    firstNonEmpty(info.StreamerName, info.ScreenID),
+		Title:           firstNonEmpty(info.Title, info.MovieID),
+		MovieID:         strings.TrimSpace(info.MovieID),
+		Folder:          targetFolder,
+		CurrentFile:     currentFile,
+		CurrentPart:     currentPart,
+		TotalParts:      totalParts,
+		ProgressPercent: 0,
+		StartedAt:       time.Now(),
+	}
+	return nil
+}
+
+func (m *Manager) handleDownloadProgress(key string, progress twitcasting.MovieDownloadProgress) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	current, exists := m.activeDownloads[key]
+	if !exists {
+		return
+	}
+
+	if progress.PartCount > 0 {
+		current.TotalParts = progress.PartCount
+	}
+	if progress.PartIndex >= 0 {
+		current.CurrentPart = progress.PartIndex + 1
+	}
+	if strings.TrimSpace(progress.OutputPath) != "" {
+		current.CurrentFile = filepath.Base(progress.OutputPath)
+	}
+	if progress.ProgressPercent < 0 {
+		current.ProgressPercent = 0
+	} else if progress.ProgressPercent > 100 {
+		current.ProgressPercent = 100
+	} else {
+		current.ProgressPercent = progress.ProgressPercent
+	}
+
+	m.activeDownloads[key] = current
+}
+
+func (m *Manager) handleDownloadEnd(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.activeDownloads, key)
 }
 
 func (m *Manager) isStreamerActive(streamer string) bool {
@@ -607,4 +721,8 @@ func resolveManualStreamerConfig(cfg *config.AppConfig, screenID string) config.
 		ScreenId: trimmedScreenID,
 		Folder:   filepath.Join("Recordings", trimmedScreenID),
 	}
+}
+
+func manualDownloadKey(screenID, movieID string) string {
+	return strings.TrimSpace(screenID) + "|" + strings.TrimSpace(movieID)
 }
