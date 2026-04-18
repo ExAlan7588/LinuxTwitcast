@@ -126,9 +126,11 @@ func Process(cfg Config, session record.SessionInfo) UploadResult {
 	return result
 }
 
-func ConvertManagedTSFile(filePath string) (string, error) {
-	if !strings.EqualFold(filepath.Ext(filePath), ".ts") {
-		return "", fmt.Errorf("only .ts files can be converted to m4a")
+func ConvertManagedMediaFile(filePath string) (string, error) {
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".ts", ".mp4":
+	default:
+		return "", fmt.Errorf("only .ts or .mp4 files can be converted to m4a")
 	}
 
 	outputFile := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".m4a"

@@ -31,7 +31,7 @@ import (
 var assets embed.FS
 
 var lookupStreamerProfile = twitcasting.LookupStreamerProfile
-var convertManagedTSFile = telegram.ConvertManagedTSFile
+var convertManagedMediaFile = telegram.ConvertManagedMediaFile
 var startManualRecording = func(manager *service.Manager, rawURL string) (service.ManualRecordResult, error) {
 	return manager.StartManualRecording(rawURL)
 }
@@ -363,12 +363,14 @@ func (s *Server) handleManualRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, map[string]any{
-		"queued":   true,
-		"streamer": result.Streamer,
-		"name":     result.StreamerName,
-		"title":    result.Title,
-		"movie_id": result.MovieID,
-		"folder":   result.Folder,
+		"queued":       true,
+		"mode":         result.Mode,
+		"streamer":     result.Streamer,
+		"name":         result.StreamerName,
+		"title":        result.Title,
+		"movie_id":     result.MovieID,
+		"folder":       result.Folder,
+		"output_files": result.OutputFiles,
 	})
 }
 
@@ -795,12 +797,14 @@ func (s *Server) handleFileConvertM4A(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, errors.New("directory conversion is not supported"))
 		return
 	}
-	if !strings.EqualFold(filepath.Ext(targetFile), ".ts") {
-		s.writeError(w, http.StatusBadRequest, errors.New("only .ts files can be converted"))
+	switch strings.ToLower(filepath.Ext(targetFile)) {
+	case ".ts", ".mp4":
+	default:
+		s.writeError(w, http.StatusBadRequest, errors.New("only .ts or .mp4 files can be converted"))
 		return
 	}
 
-	outputFile, err := convertManagedTSFile(targetFile)
+	outputFile, err := convertManagedMediaFile(targetFile)
 	if err != nil {
 		s.writeError(w, http.StatusBadGateway, err)
 		return

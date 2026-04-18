@@ -263,6 +263,17 @@ h1 {
     font-size: 20px;
 }
 
+.metric-wide {
+    grid-column: 1 / -1;
+}
+
+.metric-wide strong {
+    font-size: 15px;
+    line-height: 1.6;
+    word-break: break-word;
+    white-space: normal;
+}
+
 .runtime-list {
     display: grid;
     grid-template-columns: minmax(120px, 180px) 1fr;

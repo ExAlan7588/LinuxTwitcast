@@ -161,14 +161,15 @@ const I18N = {
         "metrics.uptime": "Uptime",
         "metrics.latestError": "Latest Error",
         "metrics.notStarted": "Not started",
-        "manual.section": "Manual Record",
-        "manual.help": "Paste a TwitCasting live or movie URL to start a one-off recording immediately. Archived movie download is not included in this first version.",
+        "manual.section": "Manual Capture",
+        "manual.help": "Paste a TwitCasting live URL to start an immediate recording, or a movie URL to download the archived movie directly when access is available.",
         "manual.urlLabel": "TwitCasting URL",
         "manual.urlHelp": "Examples: twitcasting.tv/<screen-id> or twitcasting.tv/<screen-id>/movie/<movie-id>",
         "manual.urlRequired": "A TwitCasting URL is required.",
-        "manual.start": "Start Manual Record",
+        "manual.start": "Start Capture",
         "manual.starting": "Starting...",
-        "manual.started": "{name} / {title} was queued for recording.",
+        "manual.startedRecord": "{name} / {title} was queued for recording.",
+        "manual.startedDownload": "{name} / {title} download started.",
         "streamers.none": "No streamers are configured yet. Use \"Add Streamer\" to create one.",
         "streamers.passwordSet": "Configured",
         "streamers.passwordMissing": "Not set",
@@ -352,14 +353,15 @@ const I18N = {
         "metrics.uptime": "運行時間",
         "metrics.latestError": "最近錯誤",
         "metrics.notStarted": "尚未啟動",
-        "manual.section": "手動錄製",
-        "manual.help": "貼上 TwitCasting 的直播或 movie 網址後，系統會立刻建立一次性錄製工作。已結束 movie 的直接下載不在這個第一版內。",
+        "manual.section": "手動錄製 / 下載",
+        "manual.help": "貼上 TwitCasting 直播網址後會立刻建立一次性錄製；貼上 movie 網址時，只要有權限就會直接下載 archived movie。",
         "manual.urlLabel": "TwitCasting 網址",
         "manual.urlHelp": "例如：twitcasting.tv/<screen-id> 或 twitcasting.tv/<screen-id>/movie/<movie-id>",
         "manual.urlRequired": "請先輸入 TwitCasting 網址。",
-        "manual.start": "開始手動錄製",
+        "manual.start": "開始執行",
         "manual.starting": "啟動中...",
-        "manual.started": "已排入錄製：{name} / {title}。",
+        "manual.startedRecord": "已排入錄製：{name} / {title}。",
+        "manual.startedDownload": "已開始下載：{name} / {title}。",
         "streamers.none": "目前尚未設定任何直播主，請使用「新增直播主」建立一筆。",
         "streamers.passwordSet": "已設定",
         "streamers.passwordMissing": "未設定",
@@ -773,7 +775,7 @@ function renderStatus(data) {
 
     if (recorder.last_error) {
         const item = document.createElement("div");
-        item.className = "metric";
+        item.className = "metric metric-wide";
         item.innerHTML = `<span>${t("metrics.latestError")}</span><strong>${escapeHtml(recorder.last_error)}</strong>`;
         ui.recorderSummary.appendChild(item);
     }
@@ -1413,7 +1415,8 @@ async function startManualRecord() {
         });
 
         ui.manualRecordUrlInput.value = "";
-        showToast(t("manual.started", {
+        const toastKey = result.mode === "download" ? "manual.startedDownload" : "manual.startedRecord";
+        showToast(t(toastKey, {
             name: result.name || result.streamer || "—",
             title: result.title || t("status.untitledStream")
         }));
@@ -1516,7 +1519,7 @@ function createFileRow(entry) {
     modifiedCell.textContent = formatDate(entry.modified_at);
 
     if (entry.downloadable) {
-        if (isTSFileEntry(entry)) {
+        if (isM4AConvertibleFileEntry(entry)) {
             const convertButton = document.createElement("button");
             convertButton.type = "button";
             convertButton.className = "table-link";
@@ -1604,8 +1607,8 @@ function createFileRow(entry) {
     return row;
 }
 
-function isTSFileEntry(entry) {
-    return entry.type === "file" && /\.ts$/i.test(String(entry.name || ""));
+function isM4AConvertibleFileEntry(entry) {
+    return entry.type === "file" && /\.(ts|mp4)$/i.test(String(entry.name || ""));
 }
 
 function prefixedActionLabel(hasPrefix, label) {

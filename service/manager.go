@@ -43,11 +43,13 @@ type Warning struct {
 }
 
 type ManualRecordResult struct {
-	Streamer     string `json:"streamer"`
-	StreamerName string `json:"streamer_name"`
-	Title        string `json:"title"`
-	MovieID      string `json:"movie_id,omitempty"`
-	Folder       string `json:"folder"`
+	Mode         string   `json:"mode,omitempty"`
+	Streamer     string   `json:"streamer"`
+	StreamerName string   `json:"streamer_name"`
+	Title        string   `json:"title"`
+	MovieID      string   `json:"movie_id,omitempty"`
+	Folder       string   `json:"folder"`
+	OutputFiles  []string `json:"output_files,omitempty"`
 }
 
 type streamWarning struct {
@@ -79,6 +81,11 @@ type Manager struct {
 }
 
 const passwordRetryCooldown = 2 * time.Minute
+
+const (
+	ManualActionModeRecord   = "record"
+	ManualActionModeDownload = "download"
+)
 
 func NewManager() *Manager {
 	return &Manager{
@@ -212,21 +219,57 @@ func (m *Manager) StartManualRecording(rawURL string) (ManualRecordResult, error
 		m.storeError(err)
 		return ManualRecordResult{}, err
 	}
-	if m.isStreamerActive(target.ScreenID) {
-		err = fmt.Errorf("streamer [%s] is already recording", target.ScreenID)
-		m.storeError(err)
-		return ManualRecordResult{}, err
-	}
 
 	streamerCfg := resolveManualStreamerConfig(cfg, target.ScreenID)
 	telegramCfg := telegram.LoadConfig()
 	discordCfg := discord.LoadConfig()
 
 	target, lookup, err := twitcasting.LookupManualRecordingTarget(rawURL, streamerCfg.Password)
+	if target.MovieID != "" && errors.Is(err, twitcasting.ErrMovieDownloadUnsupported) {
+		downloadInfo, downloadErr := twitcasting.PrepareMovieDownload(target.ScreenID, target.MovieID, streamerCfg.Password)
+		result := ManualRecordResult{
+			Mode:         ManualActionModeDownload,
+			Streamer:     target.ScreenID,
+			StreamerName: firstNonEmpty(downloadInfo.StreamerName, lookup.StreamerName),
+			Title:        firstNonEmpty(downloadInfo.Title, lookup.Title),
+			MovieID:      target.MovieID,
+			Folder:       streamerCfg.Folder,
+			OutputFiles:  baseNames(streamerCfg.Folder, downloadInfo),
+		}
+		if downloadErr != nil {
+			m.storeError(downloadErr)
+			return result, downloadErr
+		}
+
+		go func() {
+			outputs, runErr := twitcasting.DownloadMovieArchive(downloadInfo, streamerCfg.Folder)
+			if runErr != nil {
+				log.Printf("[Manual] Archived movie download failed for [%s] movie [%s]: %v\n", target.ScreenID, target.MovieID, runErr)
+				m.storeError(runErr)
+				return
+			}
+			log.Printf("[Manual] Archived movie download completed for [%s] movie [%s]: %s\n", target.ScreenID, target.MovieID, strings.Join(outputs, ", "))
+		}()
+		return result, nil
+	}
+
 	m.handleStreamLookup(target.ScreenID, err)
 	if err != nil {
 		m.storeError(err)
 		return ManualRecordResult{
+			Mode:         ManualActionModeRecord,
+			Streamer:     target.ScreenID,
+			StreamerName: lookup.StreamerName,
+			Title:        lookup.Title,
+			MovieID:      lookup.MovieID,
+			Folder:       streamerCfg.Folder,
+		}, err
+	}
+	if m.isStreamerActive(target.ScreenID) {
+		err = fmt.Errorf("streamer [%s] is already recording", target.ScreenID)
+		m.storeError(err)
+		return ManualRecordResult{
+			Mode:         ManualActionModeRecord,
 			Streamer:     target.ScreenID,
 			StreamerName: lookup.StreamerName,
 			Title:        lookup.Title,
@@ -250,12 +293,30 @@ func (m *Manager) StartManualRecording(rawURL string) (ManualRecordResult, error
 	go recordFunc()
 
 	return ManualRecordResult{
+		Mode:         ManualActionModeRecord,
 		Streamer:     target.ScreenID,
 		StreamerName: lookup.StreamerName,
 		Title:        lookup.Title,
 		MovieID:      lookup.MovieID,
 		Folder:       streamerCfg.Folder,
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func baseNames(folder string, info twitcasting.MovieDownloadInfo) []string {
+	outputs := make([]string, 0, len(info.PlaylistURLs))
+	for _, outputPath := range twitcasting.PlannedMovieDownloadOutputs(info, folder) {
+		outputs = append(outputs, filepath.Base(outputPath))
+	}
+	return outputs
 }
 
 func (m *Manager) Stop(ctx context.Context) error {

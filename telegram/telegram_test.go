@@ -171,9 +171,33 @@ func TestProcessRetriesConversionStrategiesAfterCopyFailure(t *testing.T) {
 	}
 }
 
-func TestConvertManagedTSFileRejectsNonTS(t *testing.T) {
-	if _, err := ConvertManagedTSFile("recording.mp3"); err == nil {
+func TestConvertManagedMediaFileRejectsUnsupportedExtension(t *testing.T) {
+	if _, err := ConvertManagedMediaFile("recording.mp3"); err == nil {
 		t.Fatal("expected non-ts conversion to fail")
+	}
+}
+
+func TestConvertManagedMediaFileAcceptsMP4(t *testing.T) {
+	originalRunFFmpeg := runFFmpeg
+	runFFmpeg = func(args ...string) ([]byte, error) {
+		return []byte("ok"), nil
+	}
+	t.Cleanup(func() {
+		runFFmpeg = originalRunFFmpeg
+	})
+
+	tempDir := t.TempDir()
+	inputFile := filepath.Join(tempDir, "recording.mp4")
+	if err := os.WriteFile(inputFile, []byte("dummy"), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	outputFile, err := ConvertManagedMediaFile(inputFile)
+	if err != nil {
+		t.Fatalf("ConvertManagedMediaFile() error = %v", err)
+	}
+	if outputFile != filepath.Join(tempDir, "recording.m4a") {
+		t.Fatalf("outputFile = %q", outputFile)
 	}
 }
 

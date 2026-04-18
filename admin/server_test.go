@@ -233,15 +233,15 @@ func TestHandleFileConvertM4AConvertsTSFiles(t *testing.T) {
 		t.Fatalf("write test file: %v", err)
 	}
 
-	originalConvertManagedTSFile := convertManagedTSFile
-	convertManagedTSFile = func(filePath string) (string, error) {
+	originalConvertManagedMediaFile := convertManagedMediaFile
+	convertManagedMediaFile = func(filePath string) (string, error) {
 		if filePath != tempFile {
 			t.Fatalf("unexpected conversion path: %s", filePath)
 		}
 		return filepath.Join(recordingsRoot, "sample.m4a"), nil
 	}
 	t.Cleanup(func() {
-		convertManagedTSFile = originalConvertManagedTSFile
+		convertManagedMediaFile = originalConvertManagedMediaFile
 	})
 
 	server := NewServer(Options{
@@ -252,6 +252,53 @@ func TestHandleFileConvertM4AConvertsTSFiles(t *testing.T) {
 	body, err := json.Marshal(map[string]string{
 		"root": recordingsRoot,
 		"path": "sample.ts",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/files/convert-m4a", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "\"output\":\"sample.m4a\"") {
+		t.Fatalf("expected output file in response, got %s", recorder.Body.String())
+	}
+}
+
+func TestHandleFileConvertM4AConvertsMP4Files(t *testing.T) {
+	rootDir := t.TempDir()
+	recordingsRoot := filepath.Join(rootDir, "Recordings")
+	if err := os.MkdirAll(recordingsRoot, 0755); err != nil {
+		t.Fatalf("mkdir recordings root: %v", err)
+	}
+	tempFile := filepath.Join(recordingsRoot, "sample.mp4")
+	if err := os.WriteFile(tempFile, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	originalConvertManagedMediaFile := convertManagedMediaFile
+	convertManagedMediaFile = func(filePath string) (string, error) {
+		if filePath != tempFile {
+			t.Fatalf("unexpected conversion path: %s", filePath)
+		}
+		return filepath.Join(recordingsRoot, "sample.m4a"), nil
+	}
+	t.Cleanup(func() {
+		convertManagedMediaFile = originalConvertManagedMediaFile
+	})
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body, err := json.Marshal(map[string]string{
+		"root": recordingsRoot,
+		"path": "sample.mp4",
 	})
 	if err != nil {
 		t.Fatalf("marshal request: %v", err)
@@ -552,6 +599,7 @@ func TestHandleManualRecordQueuesSingleRecording(t *testing.T) {
 			t.Fatalf("unexpected raw URL: %s", rawURL)
 		}
 		return service.ManualRecordResult{
+			Mode:         service.ManualActionModeRecord,
 			Streamer:     "alice",
 			StreamerName: "Alice Channel",
 			Title:        "Night Stream",
@@ -577,6 +625,9 @@ func TestHandleManualRecordQueuesSingleRecording(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), `"queued":true`) {
 		t.Fatalf("expected queued response, got %s", recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"mode":"record"`) {
+		t.Fatalf("expected manual mode in response, got %s", recorder.Body.String())
 	}
 	if !strings.Contains(recorder.Body.String(), `"streamer":"alice"`) {
 		t.Fatalf("expected streamer in response, got %s", recorder.Body.String())
