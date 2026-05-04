@@ -39,6 +39,7 @@ type RecordConfig struct {
 	PostProcessor    func(SessionInfo)
 	OnSessionStart   func(SessionInfo)
 	OnSessionEnd     func(SessionInfo)
+	BeforeSessionEnd func(SessionInfo) SessionInfo
 	OnStreamLookup   func(streamer string, err error)
 }
 
@@ -49,14 +50,17 @@ type StreamLookupResult struct {
 	Title        string
 	AvatarURL    string
 	CoverURL     string
+	MemberOnly   bool
 }
 
 type SessionInfo struct {
 	Streamer     string    `json:"streamer"`
+	MovieID      string    `json:"movie_id,omitempty"`
 	StreamerName string    `json:"streamer_name"`
 	Title        string    `json:"title"`
 	AvatarURL    string    `json:"avatar_url,omitempty"`
 	CoverURL     string    `json:"cover_url,omitempty"`
+	MemberOnly   bool      `json:"member_only,omitempty"`
 	Filename     string    `json:"filename"`
 	StartedAt    time.Time `json:"started_at"`
 	EndedAt      time.Time `json:"ended_at,omitempty"`
@@ -91,10 +95,12 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 
 		session := SessionInfo{
 			Streamer:     streamer,
+			MovieID:      lookup.MovieID,
 			StreamerName: lookup.StreamerName,
 			Title:        lookup.Title,
 			AvatarURL:    lookup.AvatarURL,
 			CoverURL:     lookup.CoverURL,
+			MemberOnly:   lookup.MemberOnly,
 			Filename:     sink.Filename(),
 			StartedAt:    time.Now(),
 		}
@@ -115,6 +121,9 @@ func ToRecordFunc(recordConfig *RecordConfig) func() {
 		// Wait for the sink file to finish writing before continuing
 		sink.Wait()
 		session.EndedAt = time.Now()
+		if recordConfig.BeforeSessionEnd != nil {
+			session = recordConfig.BeforeSessionEnd(session)
+		}
 
 		// Notify Discord that recording has ended
 		if recordConfig.Notifier != nil {

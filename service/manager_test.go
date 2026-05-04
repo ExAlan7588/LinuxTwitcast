@@ -1,9 +1,13 @@
 package service
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/jzhang046/croned-twitcasting-recorder/record"
 	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
 )
 
@@ -50,6 +54,103 @@ func TestShouldSkipStreamerExpiresAfterRetryTime(t *testing.T) {
 
 	if manager.shouldSkipStreamer("locked-user") {
 		t.Fatal("expected expired cooldown to stop skipping streamer")
+	}
+}
+
+func TestMemberOnlyTransitionDismissesWhenLookupSucceeds(t *testing.T) {
+	manager := NewManager()
+	manager.memberOnly["member-user"] = memberOnlyNotification{
+		session: record.SessionInfo{Streamer: "member-user"},
+	}
+
+	manager.mu.Lock()
+	end, dismiss := manager.takeMemberOnlyTransitionLocked("member-user", nil)
+	manager.mu.Unlock()
+
+	if end != nil {
+		t.Fatal("expected successful lookup to skip member-only archive notification")
+	}
+	if dismiss == nil {
+		t.Fatal("expected successful lookup to dismiss stale member-only message")
+	}
+	if _, exists := manager.memberOnly["member-user"]; exists {
+		t.Fatal("expected member-only state to be cleared")
+	}
+}
+
+func TestMemberOnlyTransitionArchivesOnlyWhenOffline(t *testing.T) {
+	if shouldArchiveMemberOnlyEnd(nil) {
+		t.Fatal("expected successful lookup to avoid archive notification")
+	}
+	if shouldArchiveMemberOnlyEnd(twitcasting.ErrPasswordRequired) {
+		t.Fatal("expected password state to avoid member-only archive notification")
+	}
+	if !shouldArchiveMemberOnlyEnd(twitcasting.ErrStreamOffline) {
+		t.Fatal("expected offline lookup to archive member-only ended notification")
+	}
+}
+
+func TestHandleStreamLookupStoresMemberOnlySession(t *testing.T) {
+	manager := NewManager()
+
+	manager.handleStreamLookup("member-user", twitcasting.ErrMemberOnlyLive)
+
+	entry, exists := manager.memberOnly["member-user"]
+	if !exists {
+		t.Fatal("expected member-only state to be tracked")
+	}
+	if !entry.session.MemberOnly {
+		t.Fatal("expected member-only notification session to be marked")
+	}
+}
+
+func TestRefreshSessionFromArchiveMetadataRenamesRecording(t *testing.T) {
+	originalLookup := lookupMovieArchiveMetadata
+	lookupMovieArchiveMetadata = func(streamer, movieID string) (twitcasting.MovieArchiveMetadata, error) {
+		if streamer != "mielu_ii" || movieID != "834699167" {
+			t.Fatalf("lookupMovieArchiveMetadata(%q, %q)", streamer, movieID)
+		}
+		return twitcasting.MovieArchiveMetadata{
+			StreamerName: "ミエル",
+			Title:        "「超かぐや姫」同時視聴♩ ／ ♡ASMR",
+			AvatarURL:    "https://image.example/avatar.jpg",
+		}, nil
+	}
+	t.Cleanup(func() {
+		lookupMovieArchiveMetadata = originalLookup
+	})
+
+	recordingDir := t.TempDir()
+	sourcePath := filepath.Join(recordingDir, "[ミエル][2026-05-01]♡ASMR.ts")
+	if err := os.WriteFile(sourcePath, []byte("ts data"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	session := record.SessionInfo{
+		Streamer:     "mielu_ii",
+		MovieID:      "834699167",
+		StreamerName: "ミエル",
+		Title:        "♡ASMR",
+		Filename:     sourcePath,
+		StartedAt:    time.Date(2026, 5, 1, 22, 5, 21, 0, time.Local),
+	}
+
+	refreshed := refreshSessionFromArchiveMetadata(session)
+	wantPath := filepath.Join(recordingDir, "[ミエル][2026-05-01]「超かぐや姫」同時視聴♩ ／ ♡ASMR.ts")
+	if refreshed.Filename != wantPath {
+		t.Fatalf("Filename = %q, want %q", refreshed.Filename, wantPath)
+	}
+	if refreshed.Title != "「超かぐや姫」同時視聴♩ ／ ♡ASMR" {
+		t.Fatalf("Title = %q", refreshed.Title)
+	}
+	if refreshed.AvatarURL != "https://image.example/avatar.jpg" {
+		t.Fatalf("AvatarURL = %q", refreshed.AvatarURL)
+	}
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("expected renamed file: %v", err)
+	}
+	if _, err := os.Stat(sourcePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected source file to be renamed, stat err = %v", err)
 	}
 }
 

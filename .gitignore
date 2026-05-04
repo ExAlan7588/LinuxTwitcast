@@ -70,8 +70,11 @@ recordings/
 # =========================
 # Temp / tooling
 # =========================
+.codex-tasks/
+.serena/
 .codex-turbo-src/
 codex*/
+twitcasting_auth.json
 
 # =========================
 # OS / editor

@@ -97,6 +97,18 @@ func FormatTitle(streamerName, title string) string {
 	return fmt.Sprintf("[%s][%s]%s", cleanName, date, cleanTitle)
 }
 
+func formatSessionTitle(session record.SessionInfo, texts discordTextCatalog) string {
+	titleText := session.Title
+	if session.MemberOnly && strings.TrimSpace(titleText) == "" {
+		titleText = texts.memberOnlyTitle
+	}
+	title := FormatTitle(session.StreamerName, titleText)
+	if !session.MemberOnly {
+		return title
+	}
+	return texts.memberOnlyTag + title
+}
+
 // formatDuration formats a duration as HH:MM:SS.
 func formatDuration(d time.Duration) string {
 	h := int(d.Hours())
@@ -154,76 +166,100 @@ type rolePayload struct {
 // ── Embed builders ───────────────────────────────────────────────────────────
 
 func buildStartEmbed(session record.SessionInfo, elapsed time.Duration) embed {
+	return buildStartEmbedWithTexts(session, elapsed, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
+}
+
+func buildStartEmbedWithTexts(session record.SessionInfo, elapsed time.Duration, texts discordTextCatalog) embed {
 	streamURL := buildStreamURL(session.Streamer)
 	fields := []field{
-		{Name: "直播狀態", Value: "🔴 **正在錄影中**", Inline: true},
-		{Name: "錄影時長", Value: fmt.Sprintf("⏱️ **%s**（持續更新）", formatDuration(elapsed)), Inline: true},
+		{Name: texts.liveStatusFieldName, Value: texts.liveStatusRecording, Inline: true},
+		{Name: texts.recordingDurationField, Value: fmt.Sprintf(texts.recordingDurationUpdating, formatDuration(elapsed)), Inline: true},
 	}
+	fields = withLiveTypeField(fields, session.MemberOnly, texts)
+	fields = withMovieIDField(fields, session.MovieID, texts)
 	return embed{
-		Title:     FormatTitle(session.StreamerName, session.Title),
+		Title:     formatSessionTitle(session, texts),
 		Url:       streamURL,
 		Color:     colorLive,
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
 		Image:     buildEmbedImage(session.CoverURL),
 		Fields:    fields,
-		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
+		Footer:    &footer{Text: texts.footerText, IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
 func buildEndEmbed(session record.SessionInfo, elapsed time.Duration, telegramURL string) embed {
+	return buildEndEmbedWithTexts(session, elapsed, telegramURL, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
+}
+
+func buildEndEmbedWithTexts(session record.SessionInfo, elapsed time.Duration, telegramURL string, texts discordTextCatalog) embed {
 	streamURL := buildStreamURL(session.Streamer)
 	fields := []field{
-		{Name: "直播狀態", Value: "⏹️ **錄影已結束**", Inline: true},
-		{Name: "總錄影時長", Value: fmt.Sprintf("⏱️ **%s**", formatDuration(elapsed)), Inline: true},
+		{Name: texts.liveStatusFieldName, Value: texts.liveStatusEnded, Inline: true},
+		{Name: texts.totalDurationField, Value: fmt.Sprintf("⏱️ **%s**", formatDuration(elapsed)), Inline: true},
 	}
-	fields = withTelegramArchiveField(fields, telegramURL)
+	fields = withLiveTypeField(fields, session.MemberOnly, texts)
+	fields = withMovieIDField(fields, session.MovieID, texts)
+	fields = withTelegramArchiveField(fields, telegramURL, texts)
 	return embed{
-		Title:     FormatTitle(session.StreamerName, session.Title),
+		Title:     formatSessionTitle(session, texts),
 		Url:       streamURL,
 		Color:     colorArchive,
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
 		Image:     buildEmbedImage(session.CoverURL),
 		Fields:    fields,
-		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
+		Footer:    &footer{Text: texts.footerText, IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
 func buildMemberOnlyStartEmbed(session record.SessionInfo) embed {
+	return buildMemberOnlyStartEmbedWithTexts(session, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
+}
+
+func buildMemberOnlyStartEmbedWithTexts(session record.SessionInfo, texts discordTextCatalog) embed {
 	streamURL := buildStreamURL(session.Streamer)
+	fields := []field{
+		{Name: texts.liveStatusFieldName, Value: texts.memberOnlyStatusLive, Inline: true},
+		{Name: texts.recordingStateField, Value: texts.recordingStateSkipped, Inline: true},
+	}
+	fields = withMovieIDField(fields, session.MovieID, texts)
 	return embed{
-		Title:     FormatTitle(session.StreamerName, session.Title),
+		Title:     formatSessionTitle(session, texts),
 		Url:       streamURL,
 		Color:     colorLive,
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
 		Image:     buildEmbedImage(session.CoverURL),
-		Fields: []field{
-			{Name: "直播狀態", Value: "🔒 **會員限定直播**", Inline: true},
-			{Name: "錄製狀態", Value: "🚫 **未嘗試錄製**", Inline: true},
-		},
-		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
+		Fields:    fields,
+		Footer:    &footer{Text: texts.footerText, IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
 func buildMemberOnlyEndEmbed(session record.SessionInfo) embed {
+	return buildMemberOnlyEndEmbedWithTexts(session, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
+}
+
+func buildMemberOnlyEndEmbedWithTexts(session record.SessionInfo, texts discordTextCatalog) embed {
 	streamURL := buildStreamURL(session.Streamer)
+	fields := []field{
+		{Name: texts.liveStatusFieldName, Value: texts.memberOnlyStatusEnded, Inline: true},
+		{Name: texts.recordingStateField, Value: texts.recordingStateNotRecorded, Inline: true},
+	}
+	fields = withMovieIDField(fields, session.MovieID, texts)
 	return embed{
-		Title:     FormatTitle(session.StreamerName, session.Title),
+		Title:     formatSessionTitle(session, texts),
 		Url:       streamURL,
 		Color:     colorArchive,
 		Author:    buildEmbedAuthor(session, streamURL),
 		Thumbnail: buildEmbedThumbnail(session.AvatarURL),
 		Image:     buildEmbedImage(session.CoverURL),
-		Fields: []field{
-			{Name: "直播狀態", Value: "🗂️ **會員限定直播已結束**", Inline: true},
-			{Name: "錄製狀態", Value: "🚫 **未錄製**", Inline: true},
-		},
-		Footer:    &footer{Text: "TwitCasting 取流與歸檔系統", IconUrl: twitcastIcon},
+		Fields:    fields,
+		Footer:    &footer{Text: texts.footerText, IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 }
@@ -254,10 +290,10 @@ func buildEmbedImage(coverURL string) *image {
 	return &image{Url: coverURL}
 }
 
-func withTelegramArchiveField(fields []field, telegramURL string) []field {
+func withTelegramArchiveField(fields []field, telegramURL string, texts discordTextCatalog) []field {
 	next := make([]field, 0, len(fields)+1)
 	for _, item := range fields {
-		if item.Name == "錄播檔案" {
+		if item.Name == texts.archiveFieldName {
 			continue
 		}
 		next = append(next, item)
@@ -266,11 +302,34 @@ func withTelegramArchiveField(fields []field, telegramURL string) []field {
 		return next
 	}
 	next = append(next, field{
-		Name:   "錄播檔案",
-		Value:  fmt.Sprintf("[點我打開 Telegram 錄播檔](%s)", telegramURL),
+		Name:   texts.archiveFieldName,
+		Value:  fmt.Sprintf("[%s](%s)", texts.archiveFieldLinkLabel, telegramURL),
 		Inline: false,
 	})
 	return next
+}
+
+func withLiveTypeField(fields []field, memberOnly bool, texts discordTextCatalog) []field {
+	if !memberOnly {
+		return fields
+	}
+	return append(fields, field{
+		Name:   texts.liveTypeFieldName,
+		Value:  texts.liveTypeMemberOnly,
+		Inline: true,
+	})
+}
+
+func withMovieIDField(fields []field, movieID string, texts discordTextCatalog) []field {
+	trimmedMovieID := strings.TrimSpace(movieID)
+	if trimmedMovieID == "" {
+		return fields
+	}
+	return append(fields, field{
+		Name:   texts.movieIDFieldName,
+		Value:  fmt.Sprintf("🎬 **%s**", trimmedMovieID),
+		Inline: true,
+	})
 }
 
 func formatAuthorName(session record.SessionInfo) string {
@@ -341,9 +400,10 @@ func SendInvalidStreamerIDAlert(cfg Config, screenID string) {
 	if n == nil {
 		return
 	}
+	texts := textsForLanguage(cfg.EffectiveLanguage())
 
 	e := embed{
-		Title: "TwitCasting ID已失效",
+		Title: texts.invalidStreamerTitle,
 		Url:   buildStreamURL(screenID),
 		Color: 0xe67e22,
 		Author: &author{
@@ -352,12 +412,12 @@ func SendInvalidStreamerIDAlert(cfg Config, screenID string) {
 			IconUrl: twitcastIcon,
 		},
 		Fields: []field{
-			{Name: "狀態", Value: "⚠️ **ID已失效**", Inline: true},
+			{Name: texts.invalidStreamerStatusName, Value: texts.invalidStreamerStatus, Inline: true},
 			{Name: "Streamer", Value: "`@" + screenID + "`", Inline: true},
-			{Name: "建議處理", Value: "請到前端的 General & Streamer Settings 檢查並更新 screen-id。", Inline: false},
+			{Name: texts.invalidStreamerActionName, Value: texts.invalidStreamerAction, Inline: false},
 		},
 		Footer: &footer{
-			Text:    "TwitCasting 取流與歸檔系統",
+			Text:    texts.footerText,
 			IconUrl: twitcastIcon,
 		},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -412,7 +472,6 @@ func (n *Notifier) NotifyMemberOnlyStart(session record.SessionInfo) {
 	}
 	n.messageID = msgID
 
-	AddMessageMapping(msgID, n.screenID)
 	log.Printf("[Discord] Members-only start notification sent (msgID=%s)\n", msgID)
 }
 
@@ -427,8 +486,6 @@ func (n *Notifier) NotifyMemberOnlyEnd(session record.SessionInfo) {
 
 	endEmbed := buildMemberOnlyEndEmbed(session)
 	originalMsgID := n.messageID
-
-	RemoveMessageMapping(originalMsgID)
 
 	if n.archiveChannelID != "" {
 		if _, err := n.sendMessageToChannel(n.archiveChannelID, "", endEmbed); err != nil {
@@ -446,6 +503,28 @@ func (n *Notifier) NotifyMemberOnlyEnd(session record.SessionInfo) {
 		}
 		n.messageID = ""
 	}
+}
+
+// DismissMemberOnly deletes the notify-channel members-only message when the
+// same streamer becomes recordable before the members-only live ends.
+func (n *Notifier) DismissMemberOnly(session record.SessionInfo) {
+	if n == nil {
+		return
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	originalMsgID := n.messageID
+	if originalMsgID == "" {
+		return
+	}
+	if err := n.deleteMessage(n.notifyChannelID, originalMsgID); err != nil {
+		log.Printf("[Discord] Failed to dismiss members-only message for [%s]: %v\n", session.Streamer, err)
+		return
+	}
+	n.messageID = ""
+	log.Printf("[Discord] Members-only message %s dismissed before recording [%s]\n", originalMsgID, session.Streamer)
 }
 
 // NotifyStart sends the initial "recording started" notification and begins
@@ -468,8 +547,6 @@ func (n *Notifier) NotifyStart(session record.SessionInfo) {
 	}
 	n.messageID = msgID
 
-	// Register in the global map so the right-click command can resolve the streamer
-	AddMessageMapping(msgID, n.screenID)
 	log.Printf("[Discord] Start notification sent (msgID=%s)\n", msgID)
 
 	// Periodic duration update goroutine
@@ -518,9 +595,6 @@ func (n *Notifier) NotifyEnd(session record.SessionInfo) {
 	originalMsgID := n.messageID
 	sessionKey := archiveSessionKey(session)
 
-	// Remove from the global message map before deleting the message
-	RemoveMessageMapping(originalMsgID)
-
 	// 1. Send ended embed to archive channel (no role mention on archive)
 	if n.archiveChannelID != "" {
 		if archiveMsgID, err := n.sendMessageToChannel(n.archiveChannelID, "", endEmbed); err != nil {
@@ -562,7 +636,7 @@ func (n *Notifier) UpdateArchiveWithTelegramLink(session record.SessionInfo, tel
 	}
 
 	updated := state.embed
-	updated.Fields = withTelegramArchiveField(updated.Fields, telegramURL)
+	updated.Fields = withTelegramArchiveField(updated.Fields, telegramURL, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
 	if err := n.editMessage(state.channelID, state.messageID, updated); err != nil {
 		return err
 	}

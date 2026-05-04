@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -252,12 +253,39 @@ func buildM4AMetadataArgs(session record.SessionInfo) []string {
 }
 
 func taggedM4APath(session record.SessionInfo) string {
-	dir := filepath.Dir(session.Filename)
 	name := fmt.Sprintf("[%s][%s]", telegramArtist(session), sessionDate(session).Format("2006-01-02"))
 	if title := strings.TrimSpace(session.Title); title != "" {
 		name += title
 	}
-	return filepath.Join(dir, name+".m4a")
+	return joinMediaPath(session.Filename, name+".m4a")
+}
+
+func joinMediaPath(filePath, fileName string) string {
+	if usesWindowsPathStyle(filePath) {
+		return joinWindowsPath(filePath, fileName)
+	}
+	dir := filepath.Dir(filePath)
+	if dir == "." || dir == "" {
+		return fileName
+	}
+	return filepath.Join(dir, fileName)
+}
+
+func usesWindowsPathStyle(filePath string) bool {
+	return strings.Contains(filePath, `\`) || hasWindowsDrivePrefix(filePath)
+}
+
+func hasWindowsDrivePrefix(filePath string) bool {
+	return len(filePath) >= 2 && filePath[1] == ':'
+}
+
+func joinWindowsPath(filePath, fileName string) string {
+	normalized := strings.ReplaceAll(filePath, `\`, "/")
+	dir := path.Dir(normalized)
+	if dir == "." || dir == "" {
+		return fileName
+	}
+	return strings.ReplaceAll(path.Join(dir, fileName), "/", `\`)
 }
 
 func telegramCaption(session record.SessionInfo) string {

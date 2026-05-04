@@ -48,6 +48,8 @@ const I18N = {
         "status.stopped": "Stopped",
         "status.stopping": "Stopping",
         "status.untitledStream": "Untitled stream",
+        "status.memberOnly": "Members-only",
+        "status.movieId": "Movie ID: {id}",
         "status.downloading": "Downloading",
         "status.downloadPart": "Part {current}/{total}",
         "system.section": "System Info",
@@ -254,6 +256,8 @@ const I18N = {
         "status.stopped": "已停止",
         "status.stopping": "停止中",
         "status.untitledStream": "未命名直播",
+        "status.memberOnly": "會員限定",
+        "status.movieId": "直播 ID：{id}",
         "status.downloading": "下載中",
         "status.downloadPart": "第 {current}/{total} 段",
         "system.section": "系統資訊",
@@ -882,7 +886,7 @@ function renderStatus(data) {
 
     ui.runtimeInfo.innerHTML = "";
     [
-        [t("system.version"), runtime.version || "null"],
+        [t("system.version"), runtime.version || "-"],
         [t("system.gitCommit"), runtime.git_commit || "-"],
         [t("system.osArch"), `${runtime.os || "-"} / ${runtime.arch || "-"}`],
         [t("system.workingDirectory"), runtime.working_directory || "-"],
@@ -917,10 +921,18 @@ function renderStatus(data) {
 function createActiveRecordingItem(entry) {
     const item = document.createElement("div");
     item.className = "record-item";
+    const badges = [];
+    if (entry.member_only) {
+        badges.push(`<span class="badge muted">${escapeHtml(t("status.memberOnly"))}</span>`);
+    }
+    if (entry.movie_id) {
+        badges.push(`<span class="badge muted mono">${escapeHtml(entry.movie_id)}</span>`);
+    }
     item.innerHTML = `
-        <strong>${escapeHtml(entry.streamer_name || entry.streamer)}</strong>
+        <div><strong>${escapeHtml(entry.streamer_name || entry.streamer)}</strong> ${badges.join(" ")}</div>
         <div class="muted-text mono">${escapeHtml(entry.streamer)}</div>
         <div>${escapeHtml(entry.title || t("status.untitledStream"))}</div>
+        ${entry.movie_id ? `<div class="muted-text mono">${escapeHtml(t("status.movieId", { id: entry.movie_id }))}</div>` : ""}
         <div class="muted-text mono">${escapeHtml(entry.filename || "")}</div>
     `;
     return item;

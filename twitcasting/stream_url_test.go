@@ -1,11 +1,16 @@
 package twitcasting
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"strings"
 	"testing"
+
+	"github.com/jmoiron/jsonq"
 )
 
 func TestRequiresStreamPassword(t *testing.T) {
@@ -35,6 +40,113 @@ func TestAppendPasswordToken(t *testing.T) {
 
 	if unchanged := appendPasswordToken("wss://example.test/stream?id=1", ""); unchanged != "wss://example.test/stream?id=1" {
 		t.Fatalf("expected URL without password to remain unchanged, got %q", unchanged)
+	}
+}
+
+func TestExtractMovieIDAcceptsNumericValue(t *testing.T) {
+	payload := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(`{"movie":{"id":834555312}}`), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	movieID, err := extractMovieID(jsonq.NewQuery(payload))
+	if err != nil {
+		t.Fatalf("extractMovieID() error = %v", err)
+	}
+	if movieID != "834555312" {
+		t.Fatalf("extractMovieID() = %q, want %q", movieID, "834555312")
+	}
+}
+
+func TestParseStreamPageInfoPrefersLiveHeadingAndBroadcasterData(t *testing.T) {
+	info := parseStreamPageInfo("iuuic1", `
+		<html>
+			<head>
+				<title>ちの (@iUUic1) 的直播 - Twitcast</title>
+				<meta name="twitter:title" content="注意喚起">
+			</head>
+			<body>
+				<div data-broadcaster-name="ちの"></div>
+				<div class="tw-player-page-title-title">
+					<h2>現役JKが夜の雑だん</h2>
+				</div>
+			</body>
+		</html>
+	`)
+
+	if info.streamerName != "ちの" {
+		t.Fatalf("streamerName = %q, want %q", info.streamerName, "ちの")
+	}
+	if info.title != "現役JKが夜の雑だん" {
+		t.Fatalf("title = %q, want %q", info.title, "現役JKが夜の雑だん")
+	}
+}
+
+func TestParseStreamPageInfoPrefersMoreCompleteTwitterDescription(t *testing.T) {
+	info := parseStreamPageInfo("iuuic1", `
+		<html>
+			<head>
+				<title>ちの (@iUUic1) 's Live - Twitcast</title>
+				<meta name="twitter:title" content="注意喚起">
+				<meta name="twitter:description" content="注意喚起 (カワボ雑談)">
+			</head>
+			<body>
+				<div data-broadcaster-name="ちの"></div>
+				<div class="tw-player-page-title-title">
+					<h2>注意喚起</h2>
+				</div>
+			</body>
+		</html>
+	`)
+
+	if info.streamerName != "ちの" {
+		t.Fatalf("streamerName = %q, want %q", info.streamerName, "ちの")
+	}
+	if info.title != "注意喚起 (カワボ雑談)" {
+		t.Fatalf("title = %q, want %q", info.title, "注意喚起 (カワボ雑談)")
+	}
+}
+
+func TestParseMoviePageInfoPrefersArchiveTitleMeta(t *testing.T) {
+	info := parseMoviePageInfo("mielu_ii", `
+		<html>
+			<head>
+				<title>♡ASMR - ミエル (@mielu_ii) - TwitCasting</title>
+				<meta name="twitter:title" content="「超かぐや姫」同時視聴♩ / ♡ASMR">
+				<meta property="og:title" content="old title">
+			</head>
+		</html>
+	`)
+
+	if info.streamerName != "ミエル" {
+		t.Fatalf("streamerName = %q, want %q", info.streamerName, "ミエル")
+	}
+	want := "「超かぐや姫」同時視聴♩ ／ ♡ASMR"
+	if info.title != want {
+		t.Fatalf("title = %q, want %q", info.title, want)
+	}
+}
+
+func TestParseMoviePageInfoPrefersMoreCompleteTwitterDescription(t *testing.T) {
+	info := parseMoviePageInfo("iuuic1", `
+		<html>
+			<head>
+				<title>注意喚起 - ちの (@iUUic1) - TwitCasting</title>
+				<meta name="twitter:title" content="注意喚起">
+				<meta name="twitter:description" content="注意喚起 (カワボ雑談)">
+				<meta property="og:title" content="注意喚起">
+			</head>
+			<body>
+				<div data-broadcaster-name="ちの"></div>
+				<div class="tw-player-page-title-title">
+					<h2>注意喚起</h2>
+				</div>
+			</body>
+		</html>
+	`)
+
+	if info.title != "注意喚起 (カワボ雑談)" {
+		t.Fatalf("title = %q, want %q", info.title, "注意喚起 (カワボ雑談)")
 	}
 }
 
@@ -265,6 +377,178 @@ func TestGetWSStreamUrlWithPasswordUsesMoviePageMemberOnlyMetadata(t *testing.T)
 	}
 	if result.AvatarURL != "https://imagegw02.twitcasting.tv/member-avatar.jpg" {
 		t.Fatalf("AvatarURL = %q, want %q", result.AvatarURL, "https://imagegw02.twitcasting.tv/member-avatar.jpg")
+	}
+}
+
+func TestGetWSStreamUrlWithPasswordMarksAccessibleMembersOnlyLive(t *testing.T) {
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+		InvalidateAuthCache()
+	})
+
+	if err := SaveAuthConfig(AuthConfig{CookieHeader: "tc_ss=session123"}); err != nil {
+		t.Fatalf("SaveAuthConfig() error = %v", err)
+	}
+
+	authPage := `
+		<html>
+			<head>
+				<title>ちの (@iUUic1) 的直播 - Twitcast</title>
+				<meta name="twitter:title" content="注意喚起">
+				<meta content="//imagegw03.twitcasting.tv/member-cover.jpg" property="og:image">
+			</head>
+			<body>
+				<div data-broadcaster-name="ちの"></div>
+				<div class="tw-player-page-title-title">
+					<h2>現役JKが夜の雑だん</h2>
+				</div>
+				<div data-broadcaster-profile-image="//imagegw02.twitcasting.tv/member-avatar.jpg"></div>
+			</body>
+		</html>
+	`
+	publicLockedPage := `
+		<html>
+			<head>
+				<title>ちの (@iUUic1) 的直播 - Twitcast</title>
+			</head>
+			<body>
+				<div class="tw-player-page-lock-empty-state">
+					<div>Members-only</div>
+					<a href="/membershipjoinplans.php?u=access_user">Join the membership</a>
+				</div>
+			</body>
+		</html>
+	`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hasCookie := strings.Contains(r.Header.Get("Cookie"), "tc_ss=session123")
+
+		switch r.URL.Path {
+		case "/access_user":
+			w.WriteHeader(http.StatusOK)
+			if hasCookie {
+				_, _ = w.Write([]byte(authPage))
+				return
+			}
+			_, _ = w.Write([]byte(publicLockedPage))
+		case "/access_user/movie/900002":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(authPage))
+		case "/streamserver.php":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"movie": {"live": true, "id": "900002"},
+				"llfmp4": {"streams": {"main": "wss://stream.example/live"}}
+			}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	useTwitCastingTestHTTPClient(t, server)
+
+	result, err := GetWSStreamUrlWithPassword("access_user", "")
+	if err != nil {
+		t.Fatalf("GetWSStreamUrlWithPassword() error = %v", err)
+	}
+	if !result.MemberOnly {
+		t.Fatal("expected live to be marked members-only when only authenticated access can view it")
+	}
+	if result.StreamerName != "ちの" {
+		t.Fatalf("StreamerName = %q, want %q", result.StreamerName, "ちの")
+	}
+	if result.Title != "現役JKが夜の雑だん" {
+		t.Fatalf("Title = %q, want %q", result.Title, "現役JKが夜の雑だん")
+	}
+	if result.MovieID != "900002" {
+		t.Fatalf("MovieID = %q, want %q", result.MovieID, "900002")
+	}
+}
+
+func TestGetWSStreamUrlWithPasswordTreatsMembershipMovieFallbackAsMembersOnly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/fallback_user":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`
+				<html>
+					<head>
+						<title>ちの (@iUUic1) 的直播 - Twitcast</title>
+						<meta name="twitter:title" content="注意喚起">
+						<meta content="//imagegw03.twitcasting.tv/member-cover.jpg" property="og:image">
+					</head>
+					<body>
+						<div class="tw-membership-button">
+							<a href="/membershipjoindetail.php?u=fallback_user">Membership</a>
+						</div>
+						<div class="tw-player-page-title-title">
+							<h2>現役JKが夜の雑だん</h2>
+						</div>
+						<div
+							id="comment-list-app"
+							data-broadcaster-name="ちの"
+							data-movie-id="833497743"
+							data-account-type="not_logged_in">
+						</div>
+					</body>
+				</html>
+			`))
+		case "/fallback_user/movie/900003":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`
+				<html>
+					<head>
+						<title>ちの (@iUUic1) 的直播 - Twitcast</title>
+						<meta name="twitter:title" content="注意喚起">
+					</head>
+					<body>
+						<div class="tw-membership-button">
+							<a href="/membershipjoindetail.php?u=fallback_user">Membership</a>
+						</div>
+						<div
+							id="comment-list-app"
+							data-broadcaster-name="ちの"
+							data-movie-id="833497743"
+							data-account-type="not_logged_in">
+						</div>
+					</body>
+				</html>
+			`))
+		case "/streamserver.php":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"movie": {"live": true, "id": "900003"},
+				"llfmp4": {"streams": {"main": "wss://stream.example/live"}}
+			}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	useTwitCastingTestHTTPClient(t, server)
+
+	result, err := GetWSStreamUrlWithPassword("fallback_user", "")
+	if !errors.Is(err, ErrMemberOnlyLive) {
+		t.Fatalf("GetWSStreamUrlWithPassword() error = %v, want %v", err, ErrMemberOnlyLive)
+	}
+	if !result.MemberOnly {
+		t.Fatal("expected fallback live to be marked members-only")
+	}
+	if result.MovieID != "900003" {
+		t.Fatalf("MovieID = %q, want %q", result.MovieID, "900003")
+	}
+	if result.Title != "" {
+		t.Fatalf("Title = %q, want empty title for inaccessible members-only fallback", result.Title)
 	}
 }
 

@@ -17,6 +17,7 @@ type Config struct {
 	NotifyChannelID  string `json:"notify_channel_id"`
 	ArchiveChannelID string `json:"archive_channel_id"`
 	TagRole          bool   `json:"tag_role"`
+	Language         string `json:"language,omitempty"`
 }
 
 // LoadConfig reads discord.json and returns the Discord configuration.
@@ -37,10 +38,12 @@ func LoadConfig() Config {
 		log.Printf("[Discord] Failed to parse discord.json: %v\n", err)
 		return Config{}
 	}
+	cfg.SetLanguage(cfg.Language)
 	return cfg
 }
 
 func SaveConfig(cfg Config) error {
+	cfg.SetLanguage(cfg.Language)
 	data, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		return err

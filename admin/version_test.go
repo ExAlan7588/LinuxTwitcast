@@ -49,7 +49,7 @@ func TestParseRemoteRef(t *testing.T) {
 }
 
 func TestCheckForUpdatesWithoutGitMetadata(t *testing.T) {
-	result := CheckForUpdates(t.TempDir(), BuildInfo{Version: defaultVersion})
+	result := CheckForUpdates(t.TempDir(), BuildInfo{Version: currentVersion})
 	if result.UpdateAvailable {
 		t.Fatal("expected update_available to be false")
 	}

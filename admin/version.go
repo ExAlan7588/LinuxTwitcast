@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const defaultVersion = "null"
+const currentVersion = "26.0421"
 
 type BuildInfo struct {
 	Version       string
@@ -30,7 +30,7 @@ type VersionCheckResponse struct {
 }
 
 func LoadBuildInfo(rootDir string) BuildInfo {
-	info := BuildInfo{Version: defaultVersion}
+	info := BuildInfo{Version: currentVersion}
 
 	commit, err := gitOutput(rootDir, "rev-parse", "HEAD")
 	if err == nil {

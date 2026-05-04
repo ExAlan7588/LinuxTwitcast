@@ -446,7 +446,7 @@ ps -ef | grep twitcast_bot | grep -v grep
 ## Web Console Notes
 
 - default UI language is `English`
-- System Info currently shows `Version = null` during the testing stage
+- System Info shows the baked-in build version instead of `null`
 - the `Check for Updates` button compares the local build commit with `origin/main`
 - if a newer commit exists and the repository remote can be mapped to a browser URL, the button redirects to the repository
 

@@ -512,9 +512,10 @@ func (m *Manager) newRecordFunc(
 				}
 			}
 		},
-		OnSessionStart: m.handleSessionStart,
-		OnSessionEnd:   m.handleSessionEnd,
-		OnStreamLookup: m.handleStreamLookup,
+		OnSessionStart:   m.handleSessionStart,
+		OnSessionEnd:     m.handleSessionEnd,
+		BeforeSessionEnd: refreshSessionFromArchiveMetadata,
+		OnStreamLookup:   m.handleStreamLookup,
 	})
 }
 
@@ -632,71 +633,122 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 	var shouldNotifyInvalid bool
 	var startMemberOnly *memberOnlyNotification
 	var endMemberOnly *memberOnlyNotification
+	var dismissMemberOnly *memberOnlyNotification
 	var discordCfg discord.Config
 
 	lookup, _ := twitcasting.LookupResultFromError(err)
 
 	m.mu.Lock()
 	discordCfg = m.discordCfg
-	if existing, ok := m.memberOnly[streamer]; ok && !errors.Is(err, twitcasting.ErrMemberOnlyLive) {
-		delete(m.memberOnly, streamer)
-		copy := existing
-		endMemberOnly = &copy
-	}
+	endMemberOnly, dismissMemberOnly = m.takeMemberOnlyTransitionLocked(streamer, err)
+	startMemberOnly, shouldNotifyInvalid = m.updateLookupStateLocked(streamer, lookup, err)
+	m.mu.Unlock()
 
+	dispatchMemberOnlyNotifications(startMemberOnly, endMemberOnly, dismissMemberOnly)
+	if shouldNotifyInvalid {
+		go discord.SendInvalidStreamerIDAlert(discordCfg, streamer)
+	}
+}
+
+// Caller must hold m.mu.
+func (m *Manager) updateLookupStateLocked(
+	streamer string,
+	lookup record.StreamLookupResult,
+	err error,
+) (*memberOnlyNotification, bool) {
 	switch {
 	case err == nil:
 		delete(m.warnings, streamer)
-
 	case errors.Is(err, twitcasting.ErrPasswordRequired):
 		m.warnings[streamer] = streamWarning{
 			Code:    "stream_password_required",
 			RetryAt: time.Now().Add(passwordRetryCooldown),
 		}
-
 	case errors.Is(err, twitcasting.ErrMemberOnlyLive):
-		m.warnings[streamer] = streamWarning{Code: "stream_member_only"}
-		if _, exists := m.memberOnly[streamer]; !exists {
-			streamerName := strings.TrimSpace(lookup.StreamerName)
-			if streamerName == "" {
-				streamerName = streamer
-			}
-			entry := memberOnlyNotification{
-				session: record.SessionInfo{
-					Streamer:     streamer,
-					StreamerName: streamerName,
-					Title:        lookup.Title,
-					AvatarURL:    lookup.AvatarURL,
-					CoverURL:     lookup.CoverURL,
-					StartedAt:    time.Now(),
-				},
-				notifier: discord.NewNotifierFromConfig(discordCfg, streamer),
-			}
-			m.memberOnly[streamer] = entry
-			copy := entry
-			startMemberOnly = &copy
-		}
-
+		return m.startMemberOnlyNotificationLocked(streamer, lookup, m.discordCfg), false
 	case errors.Is(err, twitcasting.ErrStreamerNotFound):
-		prev, existed := m.warnings[streamer]
-		m.warnings[streamer] = streamWarning{Code: "streamer_id_invalid"}
-		if !existed || prev.Code != "streamer_id_invalid" {
-			shouldNotifyInvalid = true
-		}
-
+		return nil, m.trackInvalidStreamerLocked(streamer)
 	case errors.Is(err, twitcasting.ErrStreamOffline):
 		delete(m.warnings, streamer)
 	}
-	m.mu.Unlock()
+	return nil, false
+}
 
-	if startMemberOnly != nil && startMemberOnly.notifier != nil {
-		go startMemberOnly.notifier.NotifyMemberOnlyStart(startMemberOnly.session)
+// Caller must hold m.mu.
+func (m *Manager) startMemberOnlyNotificationLocked(
+	streamer string,
+	lookup record.StreamLookupResult,
+	discordCfg discord.Config,
+) *memberOnlyNotification {
+	m.warnings[streamer] = streamWarning{Code: "stream_member_only"}
+	if _, exists := m.memberOnly[streamer]; exists {
+		return nil
 	}
-	if endMemberOnly != nil && endMemberOnly.notifier != nil {
-		go endMemberOnly.notifier.NotifyMemberOnlyEnd(endMemberOnly.session)
+
+	entry := memberOnlyNotification{
+		session:  memberOnlySession(streamer, lookup),
+		notifier: discord.NewNotifierFromConfig(discordCfg, streamer),
 	}
-	if shouldNotifyInvalid {
-		go discord.SendInvalidStreamerIDAlert(discordCfg, streamer)
+	m.memberOnly[streamer] = entry
+	copy := entry
+	return &copy
+}
+
+func memberOnlySession(streamer string, lookup record.StreamLookupResult) record.SessionInfo {
+	streamerName := strings.TrimSpace(lookup.StreamerName)
+	if streamerName == "" {
+		streamerName = streamer
+	}
+	return record.SessionInfo{
+		Streamer:     streamer,
+		MovieID:      lookup.MovieID,
+		StreamerName: streamerName,
+		Title:        lookup.Title,
+		AvatarURL:    lookup.AvatarURL,
+		CoverURL:     lookup.CoverURL,
+		MemberOnly:   true,
+		StartedAt:    time.Now(),
+	}
+}
+
+// Caller must hold m.mu.
+func (m *Manager) trackInvalidStreamerLocked(streamer string) bool {
+	prev, existed := m.warnings[streamer]
+	m.warnings[streamer] = streamWarning{Code: "streamer_id_invalid"}
+	return !existed || prev.Code != "streamer_id_invalid"
+}
+
+// Caller must hold m.mu.
+func (m *Manager) takeMemberOnlyTransitionLocked(streamer string, err error) (*memberOnlyNotification, *memberOnlyNotification) {
+	if errors.Is(err, twitcasting.ErrMemberOnlyLive) {
+		return nil, nil
+	}
+	existing, ok := m.memberOnly[streamer]
+	if !ok {
+		return nil, nil
+	}
+
+	delete(m.memberOnly, streamer)
+	copy := existing
+	if shouldArchiveMemberOnlyEnd(err) {
+		return &copy, nil
+	}
+	return nil, &copy
+}
+
+func shouldArchiveMemberOnlyEnd(err error) bool {
+	return errors.Is(err, twitcasting.ErrStreamOffline)
+}
+
+func dispatchMemberOnlyNotifications(start, end, dismiss *memberOnlyNotification) {
+	if start != nil && start.notifier != nil {
+		go start.notifier.NotifyMemberOnlyStart(start.session)
+	}
+	if end != nil && end.notifier != nil {
+		go end.notifier.NotifyMemberOnlyEnd(end.session)
+	}
+	if dismiss != nil && dismiss.notifier != nil {
+		go dismiss.notifier.DismissMemberOnly(dismiss.session)
 	}
 }
 

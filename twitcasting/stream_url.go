@@ -2,7 +2,6 @@ package twitcasting
 
 import (
 	"crypto/md5"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,28 +11,20 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jmoiron/jsonq"
 
-	"github.com/jzhang046/croned-twitcasting-recorder/config"
 	"github.com/jzhang046/croned-twitcasting-recorder/record"
 )
 
 const (
-	baseDomain                 = "https://twitcasting.tv"
-	apiEndpoint                = baseDomain + "/streamserver.php"
-	apiV2BaseURL               = "https://apiv2.twitcasting.tv"
-	apiV2Version               = "2.0"
-	requestTimeout             = 4 * time.Second
-	profileAPICacheTTL         = 30 * time.Second
-	userAgent                  = "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
-	twitCastingClientIDEnv     = "TWITCASTING_CLIENT_ID"
-	twitCastingClientSecretEnv = "TWITCASTING_CLIENT_SECRET"
+	baseDomain     = "https://twitcasting.tv"
+	apiEndpoint    = baseDomain + "/streamserver.php"
+	requestTimeout = 4 * time.Second
+	userAgent      = "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
 )
 
 var httpClient = &http.Client{
@@ -53,7 +44,16 @@ var (
 	titleTagRegex                 = regexp.MustCompile(`(?is)<title>(.*?)</title>`)
 	authorMetaRegex               = regexp.MustCompile(`(?is)<meta\s+name="author"\s+content="([^"]+)"`)
 	twitterTitleMetaRegex         = regexp.MustCompile(`(?is)<meta\s+name="twitter:title"\s+content="([^"]*)"`)
-	avatarURLRegexes              = []*regexp.Regexp{
+	twitterDescriptionMetaRegexes = compileMetaContentRegexes("name", "twitter:description")
+	movieTitleMetaRegexes         = append(
+		compileMetaContentRegexes("name", "twitter:title"),
+		compileMetaContentRegexes("property", "og:title")...,
+	)
+	liveTitleHeadingRegex    = regexp.MustCompile(`(?is)<div[^>]+\bclass=["'][^"']*\btw-player-page-title-title\b[^"']*["'][^>]*>.*?<h2>(.*?)</h2>`)
+	broadcasterNameDataRegex = regexp.MustCompile(`(?is)\bdata-broadcaster-name=["']([^"'<>]+)["']`)
+	pageMovieIDDataRegex     = regexp.MustCompile(`(?is)\bdata-movie-id=["'](\d+)["']`)
+	htmlTagRegex             = regexp.MustCompile(`(?is)<[^>]+>`)
+	avatarURLRegexes         = []*regexp.Regexp{
 		regexp.MustCompile(`(?is)\bdata-broadcaster-profile-image=["']([^"'<>]+)["']`),
 		regexp.MustCompile(`(?is)<img[^>]+\bclass=["'][^"']*\bauthorthumbnail\b[^"']*["'][^>]+\bsrc=["']([^"'<>]+)["']`),
 		regexp.MustCompile(`(?is)<img[^>]+\bsrc=["']([^"'<>]+)["'][^>]+\bclass=["'][^"']*\bauthorthumbnail\b[^"']*["']`),
@@ -152,6 +152,8 @@ type streamPageInfo struct {
 	title            string
 	avatarURL        string
 	coverURL         string
+	displayedMovieID string
+	membershipPage   bool
 	passwordRequired bool
 	memberOnly       bool
 }
@@ -162,28 +164,6 @@ type StreamerProfile struct {
 	Title            string
 	AvatarURL        string
 	PasswordRequired bool
-}
-
-type twitCastingProfileAPICredentials struct {
-	ClientID     string
-	ClientSecret string
-}
-
-type twitCastingUserResponse struct {
-	User twitCastingUser `json:"user"`
-}
-
-type twitCastingUser struct {
-	ID       string `json:"id"`
-	ScreenID string `json:"screen_id"`
-	Name     string `json:"name"`
-	Image    string `json:"image"`
-}
-
-var profileAPICache struct {
-	mu       sync.RWMutex
-	loadedAt time.Time
-	creds    twitCastingProfileAPICredentials
 }
 
 func GetWSStreamUrl(streamer string) (record.StreamLookupResult, error) {
@@ -249,7 +229,7 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 		result := buildLookupResultFromPageInfo(effectiveInfo)
 		return result, err
 	}
-	if movieID, err := jq.String("movie", "id"); err == nil {
+	if movieID, err := extractMovieID(jq); err == nil {
 		if movieInfo, movieErr := fetchMovieInfo(streamer, movieID); movieErr == nil {
 			effectiveInfo = mergePageInfo(effectiveInfo, movieInfo)
 		} else {
@@ -257,8 +237,16 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 		}
 	}
 	result := buildLookupResultFromPageInfo(effectiveInfo)
-	if movieID, err := jq.String("movie", "id"); err == nil {
+	if movieID, err := extractMovieID(jq); err == nil {
 		result.MovieID = strings.TrimSpace(movieID)
+	}
+	if detectMembersOnlyMovieFallback(effectiveInfo, result.MovieID) {
+		result.Title = ""
+		result.MemberOnly = true
+		return result, wrapStreamLookupError(ErrMemberOnlyLive, result)
+	}
+	if !result.MemberOnly {
+		result.MemberOnly = detectMembershipOnlyWithAuthAccess(streamer)
 	}
 	if effectiveInfo.memberOnly {
 		return result, wrapStreamLookupError(ErrMemberOnlyLive, result)
@@ -285,6 +273,7 @@ func buildLookupResultFromPageInfo(info streamPageInfo) record.StreamLookupResul
 		Title:        info.title,
 		AvatarURL:    info.avatarURL,
 		CoverURL:     info.coverURL,
+		MemberOnly:   info.memberOnly,
 	}
 }
 
@@ -333,6 +322,18 @@ func getDirectStreamURL(jq *jsonq.JsonQuery) (string, error) {
 	return "", fmt.Errorf("direct stream URL not available")
 }
 
+func extractMovieID(jq *jsonq.JsonQuery) (string, error) {
+	if movieID, err := jq.String("movie", "id"); err == nil {
+		return strings.TrimSpace(movieID), nil
+	}
+
+	movieID, err := jq.Int("movie", "id")
+	if err != nil {
+		return "", fmt.Errorf("failed parsing movie ID: %w", err)
+	}
+	return fmt.Sprintf("%d", movieID), nil
+}
+
 func fallbackStreamURL(jq *jsonq.JsonQuery) (string, error) {
 	mode := "base" // default mode
 	if isSource, err := jq.Bool("fmp4", "source"); err == nil && isSource {
@@ -351,9 +352,9 @@ func fallbackStreamURL(jq *jsonq.JsonQuery) (string, error) {
 		return "", fmt.Errorf("failed parsing stream host: %w", err)
 	}
 
-	movieID, err := jq.String("movie", "id")
+	movieID, err := extractMovieID(jq)
 	if err != nil {
-		return "", fmt.Errorf("failed parsing movie ID: %w", err)
+		return "", err
 	}
 
 	return fmt.Sprintf("%s:%s/ws.app/stream/%s/fmp4/bd/1/1500?mode=%s", protocol, host, movieID, mode), nil
@@ -371,45 +372,23 @@ func fetchStreamInfo(streamer string) streamPageInfo {
 	return info
 }
 
-func fetchMovieInfo(streamer, movieID string) (streamPageInfo, error) {
-	screenID := strings.TrimSpace(streamer)
-	trimmedMovieID := strings.TrimSpace(movieID)
-	if screenID == "" || trimmedMovieID == "" {
-		return streamPageInfo{streamerName: streamer}, errors.New("streamer and movieID are required")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s/movie/%s", baseDomain, screenID, trimmedMovieID), nil)
-	if err != nil {
-		return streamPageInfo{streamerName: streamer}, err
-	}
-	req.Header.Set("User-Agent", userAgent)
-	ApplyAuthToRequest(req)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return streamPageInfo{streamerName: streamer}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return streamPageInfo{streamerName: streamer}, fmt.Errorf("unexpected movie page status: %d", resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return streamPageInfo{streamerName: streamer}, err
-	}
-
-	return parseStreamPageInfo(screenID, string(bodyBytes)), nil
+func fetchStreamInfoWithStatus(streamer string) (streamPageInfo, int, error) {
+	return fetchStreamInfoWithStatusUsingAuth(streamer, true)
 }
 
-func fetchStreamInfoWithStatus(streamer string) (streamPageInfo, int, error) {
+func fetchStreamInfoWithStatusWithoutAuth(streamer string) (streamPageInfo, int, error) {
+	return fetchStreamInfoWithStatusUsingAuth(streamer, false)
+}
+
+func fetchStreamInfoWithStatusUsingAuth(streamer string, includeAuth bool) (streamPageInfo, int, error) {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprint(baseDomain, "/", streamer), nil)
 	if err != nil {
 		return streamPageInfo{streamerName: streamer}, 0, err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	ApplyAuthToRequest(req)
+	if includeAuth {
+		ApplyAuthToRequest(req)
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -436,66 +415,193 @@ func parseStreamPageInfo(streamer, bodyStr string) streamPageInfo {
 	}
 	info.passwordRequired = requiresStreamPassword(bodyStr)
 	info.memberOnly = requiresMembershipAccess(bodyStr)
-
-	// --- Extract streamer display name ---
-	// TwitCasting <title> when live: "STREAM_TITLE - NAME (@screen-id) - Twitcast"
-	// TwitCasting <title> when offline: "NAME (@screen-id) 's Live - Twitcast"
-	titleMatches := titleTagRegex.FindStringSubmatch(bodyStr)
-	if len(titleMatches) > 1 {
-		rawTitle := titleMatches[1]
-		if title, streamerName := parseTitleTag(streamer, rawTitle); streamerName != "" {
-			info.streamerName = streamerName
-			info.title = title
-		}
-	}
-
-	// Fallback: try <meta name="author"> for streamer name
-	if info.streamerName == streamer {
-		authorMatch := authorMetaRegex.FindStringSubmatch(bodyStr)
-		if len(authorMatch) > 1 {
-			candidate := strings.TrimSpace(authorMatch[1])
-			if candidate != "" && !strings.EqualFold(candidate, "twitcasting") {
-				info.streamerName = candidate
-			}
-		}
-	}
-
-	// --- Extract stream title ---
-	// Only use twitter:title as a fallback.
-	// If we already got a title earlier, do not overwrite it.
-	twitterTitleMatch := twitterTitleMetaRegex.FindStringSubmatch(bodyStr)
-	if len(twitterTitleMatch) > 1 {
-		candidate := strings.TrimSpace(twitterTitleMatch[1])
-		if info.title == "" &&
-			candidate != "" &&
-			candidate != info.streamerName &&
-			!strings.Contains(candidate, "@"+streamer) {
-			info.title = candidate
-		}
-	}
-
-	// Fallback: try to extract stream title from <title> tag
-	// Pattern: "STREAM_TITLE - NAME (@screen-id)"
-	if info.title == "" && len(titleMatches) > 1 {
-		rawTitle := titleMatches[1]
-		// If the raw title contains " - NAME", the part before it is the stream title
-		if info.streamerName != streamer && strings.Contains(rawTitle, " - "+info.streamerName) {
-			parts := strings.SplitN(rawTitle, " - "+info.streamerName, 2)
-			candidate := strings.TrimSpace(parts[0])
-			// Don't treat the streamer name line itself as a title
-			if candidate != "" && candidate != info.streamerName {
-				info.title = candidate
-			}
-		}
-	}
+	rawTitle := extractPageTitle(bodyStr)
+	info.streamerName, info.title = extractPrimaryStreamerAndTitle(streamer, rawTitle, bodyStr)
+	info.title = selectPreferredStreamTitle(bodyStr, rawTitle, info.streamerName, streamer, info.title)
 
 	// TwitCasting 页面里同时有直播封面和主播头像。
 	// 这里把两者拆开保存，避免再把封面误当成主播头像。
 	info.coverURL = extractCoverURL(bodyStr)
 	info.avatarURL = extractAvatarURL(bodyStr)
+	info.displayedMovieID = extractDisplayedMovieID(bodyStr)
+	info.membershipPage = hasMembershipPageHints(bodyStr)
 	info.streamerName = sanitizeFilename(info.streamerName)
 	info.title = sanitizeFilename(info.title)
 	return info
+}
+
+func extractPageTitle(body string) string {
+	match := titleTagRegex.FindStringSubmatch(body)
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
+}
+
+func extractPrimaryStreamerAndTitle(streamer, rawTitle, body string) (string, string) {
+	streamerName := streamer
+	title := ""
+
+	if rawTitle != "" {
+		if parsedTitle, parsedStreamer := parseTitleTag(streamer, rawTitle); parsedStreamer != "" {
+			streamerName = parsedStreamer
+			title = parsedTitle
+		}
+	}
+
+	if streamerName == streamer {
+		authorMatch := authorMetaRegex.FindStringSubmatch(body)
+		if len(authorMatch) > 1 {
+			candidate := strings.TrimSpace(authorMatch[1])
+			if candidate != "" && !strings.EqualFold(candidate, "twitcasting") {
+				streamerName = candidate
+			}
+		}
+	}
+	if streamerName == streamer {
+		streamerName = extractBroadcasterName(body, streamer)
+	}
+	return streamerName, title
+}
+
+func selectPreferredStreamTitle(body, rawTitle, streamerName, streamer, currentTitle string) string {
+	title := strings.TrimSpace(currentTitle)
+	if title == "" {
+		title = extractLiveHeadingTitle(body)
+	}
+	if title == "" {
+		title = extractFallbackTwitterTitle(body, streamerName, streamer)
+	}
+	if title == "" {
+		title = extractTitleFromPageTitle(rawTitle, streamerName, streamer)
+	}
+	if extended := extractExtendedTwitterDescriptionTitle(body, title, streamerName, streamer); extended != "" {
+		return extended
+	}
+	return title
+}
+
+func extractLiveHeadingTitle(body string) string {
+	match := liveTitleHeadingRegex.FindStringSubmatch(body)
+	if len(match) < 2 {
+		return ""
+	}
+	return cleanHTMLText(match[1])
+}
+
+func extractBroadcasterName(body, fallback string) string {
+	match := broadcasterNameDataRegex.FindStringSubmatch(body)
+	if len(match) < 2 {
+		return fallback
+	}
+	candidate := cleanHTMLText(match[1])
+	if candidate == "" {
+		return fallback
+	}
+	return candidate
+}
+
+func cleanHTMLText(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	text := html.UnescapeString(raw)
+	text = htmlTagRegex.ReplaceAllString(text, " ")
+	return strings.Join(strings.Fields(text), " ")
+}
+
+func extractFallbackTwitterTitle(body, streamerName, streamer string) string {
+	match := twitterTitleMetaRegex.FindStringSubmatch(body)
+	if len(match) < 2 {
+		return ""
+	}
+	candidate := strings.TrimSpace(match[1])
+	if !isUsableTitleCandidate(candidate, streamerName, streamer) {
+		return ""
+	}
+	return candidate
+}
+
+func extractTitleFromPageTitle(rawTitle, streamerName, streamer string) string {
+	if rawTitle == "" || streamerName == streamer {
+		return ""
+	}
+	marker := " - " + streamerName
+	if !strings.Contains(rawTitle, marker) {
+		return ""
+	}
+	parts := strings.SplitN(rawTitle, marker, 2)
+	candidate := strings.TrimSpace(parts[0])
+	if !isUsableTitleCandidate(candidate, streamerName, streamer) {
+		return ""
+	}
+	return candidate
+}
+
+func isUsableTitleCandidate(candidate, streamerName, streamer string) bool {
+	candidate = strings.TrimSpace(candidate)
+	return candidate != "" &&
+		candidate != streamerName &&
+		!strings.Contains(candidate, "@"+streamer)
+}
+
+func extractExtendedTwitterDescriptionTitle(body, currentTitle, streamerName, streamer string) string {
+	baseTitle := cleanHTMLText(currentTitle)
+	if !isUsableTitleCandidate(baseTitle, streamerName, streamer) {
+		return ""
+	}
+
+	description := extractMetaContentByPatterns(body, twitterDescriptionMetaRegexes)
+	description = cleanHTMLText(description)
+	if !isUsableTitleCandidate(description, streamerName, streamer) {
+		return ""
+	}
+	if description == baseTitle {
+		return ""
+	}
+	if !strings.HasPrefix(description, baseTitle) {
+		return ""
+	}
+	return description
+}
+
+func extractDisplayedMovieID(body string) string {
+	match := pageMovieIDDataRegex.FindStringSubmatch(body)
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
+}
+
+func hasMembershipPageHints(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "membershipjoindetail.php?u=") ||
+		strings.Contains(lower, "tw-membership-button") ||
+		strings.Contains(lower, "tw-unit-own-member-icon")
+}
+
+func detectMembersOnlyMovieFallback(info streamPageInfo, currentMovieID string) bool {
+	displayedMovieID := strings.TrimSpace(info.displayedMovieID)
+	trimmedCurrentMovieID := strings.TrimSpace(currentMovieID)
+	if displayedMovieID == "" || trimmedCurrentMovieID == "" {
+		return false
+	}
+	if displayedMovieID == trimmedCurrentMovieID {
+		return false
+	}
+	return info.membershipPage
+}
+
+func detectMembershipOnlyWithAuthAccess(streamer string) bool {
+	if strings.TrimSpace(CurrentCookieHeader()) == "" {
+		return false
+	}
+
+	info, statusCode, err := fetchStreamInfoWithStatusWithoutAuth(streamer)
+	if err != nil || statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		return false
+	}
+	return info.memberOnly
 }
 
 func parseTitleTag(streamer, rawTitle string) (string, string) {
@@ -560,6 +666,16 @@ func extractMetaContent(body, attr, name string) string {
 	return ""
 }
 
+func extractMetaContentByPatterns(body string, patterns []*regexp.Regexp) string {
+	for _, pattern := range patterns {
+		match := pattern.FindStringSubmatch(body)
+		if len(match) > 1 {
+			return strings.TrimSpace(html.UnescapeString(match[1]))
+		}
+	}
+	return ""
+}
+
 func compileMetaContentRegexes(attr, name string) []*regexp.Regexp {
 	quotedName := regexp.QuoteMeta(name)
 	return []*regexp.Regexp{
@@ -597,120 +713,6 @@ func upgradeImageURL(raw string) string {
 	parsed.Path = twitterProfileSizeSuffixRegex.ReplaceAllString(parsed.Path, `$2`)
 	parsed.Path = genericSmallImageSuffixRegex.ReplaceAllString(parsed.Path, `$1`)
 	return parsed.String()
-}
-
-func enrichStreamInfoFromUserAPI(streamer string, info *streamPageInfo) {
-	if info == nil {
-		return
-	}
-
-	user, err := fetchUserProfileFromAPI(streamer)
-	if err != nil {
-		return
-	}
-
-	if name := strings.TrimSpace(user.Name); name != "" {
-		info.streamerName = sanitizeFilename(name)
-	}
-	if avatarURL := normalizeImageURL(user.Image); avatarURL != "" {
-		info.avatarURL = avatarURL
-	}
-}
-
-func fetchUserProfileFromAPI(streamer string) (twitCastingUser, error) {
-	creds := currentProfileAPICredentials()
-	if !creds.IsComplete() {
-		return twitCastingUser{}, errors.New("TwitCasting API credentials are not configured")
-	}
-
-	endpoint := fmt.Sprintf("%s/users/%s", apiV2BaseURL, url.PathEscape(strings.TrimSpace(streamer)))
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-	if err != nil {
-		return twitCastingUser{}, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", creds.BasicAuthHeader())
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("X-Api-Version", apiV2Version)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return twitCastingUser{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return twitCastingUser{}, ErrStreamerNotFound
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return twitCastingUser{}, fmt.Errorf("TwitCasting API request failed: status %d", resp.StatusCode)
-	}
-
-	var payload twitCastingUserResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return twitCastingUser{}, err
-	}
-	if strings.TrimSpace(payload.User.ScreenID) == "" &&
-		strings.TrimSpace(payload.User.Name) == "" &&
-		strings.TrimSpace(payload.User.Image) == "" {
-		return twitCastingUser{}, errors.New("TwitCasting API response did not include user data")
-	}
-	return payload.User, nil
-}
-
-func (c twitCastingProfileAPICredentials) IsComplete() bool {
-	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != ""
-}
-
-func (c twitCastingProfileAPICredentials) BasicAuthHeader() string {
-	token := base64.StdEncoding.EncodeToString([]byte(strings.TrimSpace(c.ClientID) + ":" + strings.TrimSpace(c.ClientSecret)))
-	return "Basic " + token
-}
-
-func currentProfileAPICredentials() twitCastingProfileAPICredentials {
-	if creds := profileAPICredentialsFromEnv(); creds.IsComplete() {
-		return creds
-	}
-
-	profileAPICache.mu.RLock()
-	if time.Since(profileAPICache.loadedAt) < profileAPICacheTTL {
-		cached := profileAPICache.creds
-		profileAPICache.mu.RUnlock()
-		return cached
-	}
-	profileAPICache.mu.RUnlock()
-
-	profileAPICache.mu.Lock()
-	defer profileAPICache.mu.Unlock()
-	if time.Since(profileAPICache.loadedAt) < profileAPICacheTTL {
-		return profileAPICache.creds
-	}
-
-	loaded := twitCastingProfileAPICredentials{}
-	cfg, err := config.LoadDefault()
-	if err == nil && cfg != nil {
-		loaded = twitCastingProfileAPICredentials{
-			ClientID:     strings.TrimSpace(cfg.TwitCastingAPI.ClientID),
-			ClientSecret: strings.TrimSpace(cfg.TwitCastingAPI.ClientSecret),
-		}
-	}
-	profileAPICache.loadedAt = time.Now()
-	profileAPICache.creds = loaded
-	return loaded
-}
-
-func profileAPICredentialsFromEnv() twitCastingProfileAPICredentials {
-	return twitCastingProfileAPICredentials{
-		ClientID:     strings.TrimSpace(os.Getenv(twitCastingClientIDEnv)),
-		ClientSecret: strings.TrimSpace(os.Getenv(twitCastingClientSecretEnv)),
-	}
-}
-
-func InvalidateProfileAPICache() {
-	profileAPICache.mu.Lock()
-	defer profileAPICache.mu.Unlock()
-	profileAPICache.loadedAt = time.Time{}
-	profileAPICache.creds = twitCastingProfileAPICredentials{}
 }
 
 // 锁页会显示专门的空状态和 password 表单；先在这里拦下，避免无密码时反复尝试启动录影。

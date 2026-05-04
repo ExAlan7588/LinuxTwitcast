@@ -181,8 +181,8 @@ func (g *Gateway) handleDispatch(event string, data json.RawMessage) {
 		json.Unmarshal(data, &ready) //nolint:errcheck
 		log.Printf("[Gateway] Connected as %s (session %s)\n", ready.User.Username, ready.SessionID)
 
-		// Register the context menu command now that we have a valid session
-		RegisterContextMenuCommand(g.cfg, g.appID)
+		// Register guild commands now that we have a valid session.
+		RegisterCommands(g.cfg, g.appID)
 
 	case "INTERACTION_CREATE":
 		HandleInteraction(g.cfg, g.appID, data)

@@ -422,7 +422,7 @@ func TestHandleVersionCheckReturnsJSON(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if payload.Version != defaultVersion {
+	if payload.Version != currentVersion {
 		t.Fatalf("unexpected version: %q", payload.Version)
 	}
 	if payload.Message == "" {
