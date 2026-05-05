@@ -163,6 +163,51 @@ func TestSessionCoverArtURLFallsBackToStreamCover(t *testing.T) {
 	}
 }
 
+func TestProcessUsesAvatarForCoverArtBeforeFallbackToCoverURL(t *testing.T) {
+	originalRunFFmpeg := runFFmpeg
+	runFFmpeg = func(args ...string) ([]byte, error) {
+		return []byte("ok"), nil
+	}
+	t.Cleanup(func() {
+		runFFmpeg = originalRunFFmpeg
+	})
+
+	avatarHits := 0
+	avatarServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/avatar.jpg" {
+			t.Fatalf("unexpected avatar request path: %s", r.URL.Path)
+		}
+		avatarHits++
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("jpeg"))
+	}))
+	defer avatarServer.Close()
+
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.ts")
+	if err := os.WriteFile(sourceFile, []byte("dummy"), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	Process(Config{
+		Enabled:      true,
+		BotToken:     "bot-token",
+		ChatID:       "chat-id",
+		ConvertToM4A: true,
+	}, record.SessionInfo{
+		Filename:     sourceFile,
+		StreamerName: "測試主播",
+		AvatarURL:    avatarServer.URL + "/avatar.jpg",
+		CoverURL:     "https://example.test/stream-cover.jpg",
+		Title:        "今晚雜談",
+		StartedAt:    time.Date(2026, 4, 14, 9, 0, 0, 0, time.UTC),
+	})
+
+	if avatarHits == 0 {
+		t.Fatal("expected avatar cover art to be fetched")
+	}
+}
+
 func TestProcessRetriesConversionStrategiesAfterCopyFailure(t *testing.T) {
 	originalRunFFmpeg := runFFmpeg
 	originalUploadTelegramFile := uploadTelegramFile
