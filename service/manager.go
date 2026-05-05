@@ -251,14 +251,17 @@ func (m *Manager) StartManualRecording(rawURL string) (ManualRecordResult, error
 			Title:        firstNonEmpty(downloadInfo.Title, lookup.Title),
 			MovieID:      target.MovieID,
 			Folder:       streamerCfg.Folder,
-			OutputFiles:  baseNames(streamerCfg.Folder, downloadInfo),
+			OutputFiles:  make([]string, 0, len(downloadInfo.PlaylistURLs)),
+		}
+		for _, outputPath := range twitcasting.PlannedMovieDownloadOutputs(downloadInfo, streamerCfg.Folder) {
+			result.OutputFiles = append(result.OutputFiles, filepath.Base(outputPath))
 		}
 		if downloadErr != nil {
 			m.storeError(downloadErr)
 			return result, downloadErr
 		}
 
-		downloadKey := manualDownloadKey(target.ScreenID, target.MovieID)
+		downloadKey := strings.TrimSpace(target.ScreenID) + "|" + strings.TrimSpace(target.MovieID)
 		if err := m.handleDownloadStart(downloadKey, downloadInfo, streamerCfg.Folder); err != nil {
 			m.storeError(err)
 			return result, err
@@ -338,14 +341,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func baseNames(folder string, info twitcasting.MovieDownloadInfo) []string {
-	outputs := make([]string, 0, len(info.PlaylistURLs))
-	for _, outputPath := range twitcasting.PlannedMovieDownloadOutputs(info, folder) {
-		outputs = append(outputs, filepath.Base(outputPath))
-	}
-	return outputs
 }
 
 func (m *Manager) Stop(ctx context.Context) error {
@@ -644,7 +639,15 @@ func (m *Manager) handleStreamLookup(streamer string, err error) {
 	startMemberOnly, shouldNotifyInvalid = m.updateLookupStateLocked(streamer, lookup, err)
 	m.mu.Unlock()
 
-	dispatchMemberOnlyNotifications(startMemberOnly, endMemberOnly, dismissMemberOnly)
+	if startMemberOnly != nil && startMemberOnly.notifier != nil {
+		go startMemberOnly.notifier.NotifyMemberOnlyStart(startMemberOnly.session)
+	}
+	if endMemberOnly != nil && endMemberOnly.notifier != nil {
+		go endMemberOnly.notifier.NotifyMemberOnlyEnd(endMemberOnly.session)
+	}
+	if dismissMemberOnly != nil && dismissMemberOnly.notifier != nil {
+		go dismissMemberOnly.notifier.DismissMemberOnly(dismissMemberOnly.session)
+	}
 	if shouldNotifyInvalid {
 		go discord.SendInvalidStreamerIDAlert(discordCfg, streamer)
 	}
@@ -730,26 +733,10 @@ func (m *Manager) takeMemberOnlyTransitionLocked(streamer string, err error) (*m
 
 	delete(m.memberOnly, streamer)
 	copy := existing
-	if shouldArchiveMemberOnlyEnd(err) {
+	if errors.Is(err, twitcasting.ErrStreamOffline) {
 		return &copy, nil
 	}
 	return nil, &copy
-}
-
-func shouldArchiveMemberOnlyEnd(err error) bool {
-	return errors.Is(err, twitcasting.ErrStreamOffline)
-}
-
-func dispatchMemberOnlyNotifications(start, end, dismiss *memberOnlyNotification) {
-	if start != nil && start.notifier != nil {
-		go start.notifier.NotifyMemberOnlyStart(start.session)
-	}
-	if end != nil && end.notifier != nil {
-		go end.notifier.NotifyMemberOnlyEnd(end.session)
-	}
-	if dismiss != nil && dismiss.notifier != nil {
-		go dismiss.notifier.DismissMemberOnly(dismiss.session)
-	}
 }
 
 func resolveManualStreamerConfig(cfg *config.AppConfig, screenID string) config.StreamerConfig {
@@ -773,8 +760,4 @@ func resolveManualStreamerConfig(cfg *config.AppConfig, screenID string) config.
 		ScreenId: trimmedScreenID,
 		Folder:   filepath.Join("Recordings", trimmedScreenID),
 	}
-}
-
-func manualDownloadKey(screenID, movieID string) string {
-	return strings.TrimSpace(screenID) + "|" + strings.TrimSpace(movieID)
 }

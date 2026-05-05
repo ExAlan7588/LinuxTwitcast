@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jzhang046/croned-twitcasting-recorder/record"
@@ -34,17 +35,21 @@ func (s *FileSink) Wait() {
 }
 
 func NewFileSink(recordCtx record.RecordContext) (record.Sink, error) {
-	streamerName := recordCtx.GetStreamerName()
-	if streamerName == "" {
-		streamerName = recordCtx.GetStreamer()
+	session := record.SessionInfo{
+		Streamer:     recordCtx.GetStreamer(),
+		StreamerName: recordCtx.GetStreamerName(),
+		Title:        recordCtx.GetTitle(),
+		StartedAt:    time.Now(),
 	}
 
-	title := recordCtx.GetTitle()
-
 	var filename string
-	if title != "" {
-		filename = fmt.Sprintf("[%s][%s]%s.ts", streamerName, time.Now().Format("2006-01-02"), title)
+	if strings.TrimSpace(session.Title) != "" {
+		filename = fmt.Sprintf("%s.ts", record.FormattedMediaName(session))
 	} else {
+		streamerName := session.StreamerName
+		if streamerName == "" {
+			streamerName = session.Streamer
+		}
 		filename = fmt.Sprintf("%s-%s.ts", streamerName, time.Now().Format(timeFormat))
 	}
 

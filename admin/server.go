@@ -748,7 +748,7 @@ func (s *Server) handleFileTelegramUpload(w http.ResponseWriter, r *http.Request
 	}
 
 	// Manual uploads must keep the original file; audio goes to sendAudio and everything else goes to sendDocument.
-	method, err := telegram.UploadManagedFile(telegramCfg, targetFile, telegramCaption(filepath.Base(targetFile)))
+	method, err := telegram.UploadManagedFile(telegramCfg, targetFile, truncateUploadName(filepath.Base(targetFile)))
 	if err != nil {
 		s.writeError(w, http.StatusBadGateway, err)
 		return
@@ -1048,7 +1048,7 @@ func pathWithinRoot(root, target string) bool {
 	return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator)))
 }
 
-func telegramCaption(name string) string {
+func truncateUploadName(name string) string {
 	caption := strings.TrimSpace(name)
 	if caption == "" {
 		return "manual upload"

@@ -53,12 +53,14 @@ func RecordDirect(args []string) {
 			*streamer, *retries, *retryBackoffPeriod,
 		)
 		record.ToRecordFunc(&record.RecordConfig{
-			Streamer:         *streamer,
-			StreamUrlFetcher: twitcasting.GetWSStreamUrl,
-			LookupLogger:     twitcasting.LogStreamLookupOutcome,
-			SinkProvider:     sink.NewFileSink,
-			StreamRecorder:   twitcasting.RecordWS,
-			RootContext:      interruptCtx,
+			Streamer: *streamer,
+			StreamUrlFetcher: func(streamer string) (record.StreamLookupResult, error) {
+				return twitcasting.GetWSStreamUrlWithPassword(streamer, "")
+			},
+			LookupLogger:   twitcasting.LogStreamLookupOutcome,
+			SinkProvider:   sink.NewFileSink,
+			StreamRecorder: twitcasting.RecordWS,
+			RootContext:    interruptCtx,
 		})()
 		select {
 		// wait for either interrupted or retry backoff period

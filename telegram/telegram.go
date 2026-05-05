@@ -65,7 +65,11 @@ var (
 	runFFmpeg = func(args ...string) ([]byte, error) {
 		return exec.Command("ffmpeg", args...).CombinedOutput()
 	}
-	uploadTelegramFile = UploadFileWithResult
+	uploadTelegramFile = func(cfg Config, filePath, caption string) (UploadResult, error) {
+		return uploadFile(cfg, filePath, caption, UploadMethodAudio)
+	}
+	telegramHTTPClient  = &http.Client{}
+	telegramCoverClient = &http.Client{Timeout: 15 * time.Second}
 )
 
 func LoadConfig() Config {
@@ -117,7 +121,7 @@ func Process(cfg Config, session record.SessionInfo) UploadResult {
 
 	// 2. Upload to Telegram
 	log.Printf("[Telegram] Uploading %s to Telegram Chat %s", targetFile, cfg.ChatID)
-	result, err := uploadTelegramFile(cfg, targetFile, telegramCaption(session))
+	result, err := uploadTelegramFile(cfg, targetFile, record.FormattedMediaName(session))
 	if err != nil {
 		log.Printf("[Telegram] Upload failed: %v\n", err)
 		return UploadResult{}
@@ -237,9 +241,9 @@ func buildM4AMetadataArgs(session record.SessionInfo) []string {
 		key   string
 		value string
 	}{
-		{key: "artist", value: telegramArtist(session)},
+		{key: "artist", value: record.NormalizedStreamerLabel(session)},
 		{key: "title", value: strings.TrimSpace(session.Title)},
-		{key: "date", value: sessionDate(session).Format("2006-01-02")},
+		{key: "date", value: record.NormalizedSessionDate(session)},
 	}
 
 	args := make([]string, 0, len(metadata)*2)
@@ -253,11 +257,7 @@ func buildM4AMetadataArgs(session record.SessionInfo) []string {
 }
 
 func taggedM4APath(session record.SessionInfo) string {
-	name := fmt.Sprintf("[%s][%s]", telegramArtist(session), sessionDate(session).Format("2006-01-02"))
-	if title := strings.TrimSpace(session.Title); title != "" {
-		name += title
-	}
-	return joinMediaPath(session.Filename, name+".m4a")
+	return joinMediaPath(session.Filename, record.FormattedMediaName(session)+".m4a")
 }
 
 func joinMediaPath(filePath, fileName string) string {
@@ -288,29 +288,6 @@ func joinWindowsPath(filePath, fileName string) string {
 	return strings.ReplaceAll(path.Join(dir, fileName), "/", `\`)
 }
 
-func telegramCaption(session record.SessionInfo) string {
-	artist := telegramArtist(session)
-	title := strings.TrimSpace(session.Title)
-	if title == "" {
-		return fmt.Sprintf("[%s]", artist)
-	}
-	return fmt.Sprintf("[%s] %s", artist, title)
-}
-
-func telegramArtist(session record.SessionInfo) string {
-	if artist := strings.TrimSpace(session.StreamerName); artist != "" {
-		return artist
-	}
-	return strings.TrimSpace(session.Streamer)
-}
-
-func sessionDate(session record.SessionInfo) time.Time {
-	if session.StartedAt.IsZero() {
-		return time.Now()
-	}
-	return session.StartedAt.Local()
-}
-
 func sessionCoverArtURL(session record.SessionInfo) string {
 	if avatarURL := strings.TrimSpace(session.AvatarURL); avatarURL != "" {
 		return avatarURL
@@ -329,8 +306,7 @@ func downloadCoverArt(rawURL string) (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := telegramCoverClient.Do(req)
 	if err != nil {
 		return "", nil, err
 	}
@@ -360,19 +336,10 @@ func downloadCoverArt(rawURL string) (string, func(), error) {
 	return tempFile.Name(), func() { _ = os.Remove(tempFile.Name()) }, nil
 }
 
-func UploadFile(cfg Config, filePath string, caption string) error {
-	_, err := UploadFileWithResult(cfg, filePath, caption)
-	return err
-}
-
 func UploadManagedFile(cfg Config, filePath string, caption string) (UploadMethod, error) {
 	method := uploadMethodForPath(filePath)
 	result, err := uploadFile(cfg, filePath, caption, method)
 	return result.Method, err
-}
-
-func UploadFileWithResult(cfg Config, filePath string, caption string) (UploadResult, error) {
-	return uploadFile(cfg, filePath, caption, UploadMethodAudio)
 }
 
 func SendTestMessage(cfg Config, text string) error {
@@ -393,8 +360,7 @@ func SendTestMessage(cfg Config, text string) error {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := telegramHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -433,17 +399,23 @@ func uploadFile(cfg Config, filePath string, caption string, method UploadMethod
 	writer := multipart.NewWriter(pw)
 
 	go func() {
-		defer pw.Close()
-		defer writer.Close()
-
 		_ = writer.WriteField("chat_id", cfg.ChatID)
 		_ = writer.WriteField("caption", caption)
 
 		part, err := writer.CreateFormFile(uploadFieldName(method), filepath.Base(filePath))
 		if err != nil {
+			_ = pw.CloseWithError(err)
 			return
 		}
-		io.Copy(part, file)
+		if _, err := io.Copy(part, file); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		if err := writer.Close(); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		_ = pw.Close()
 	}()
 
 	url := fmt.Sprintf("%s/bot%s/%s", strings.TrimRight(apiEndpoint(cfg.ApiEndpoint), "/"), cfg.BotToken, uploadMethodEndpoint(method))
@@ -453,8 +425,7 @@ func uploadFile(cfg Config, filePath string, caption string, method UploadMethod
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := telegramHTTPClient.Do(req)
 	if err != nil {
 		return result, err
 	}
@@ -467,7 +438,7 @@ func uploadFile(cfg Config, filePath string, caption string, method UploadMethod
 
 	var payload telegramAPIResponse
 	if err := json.Unmarshal(respBody, &payload); err != nil {
-		return result, nil
+		return result, err
 	}
 	if !payload.OK {
 		if strings.TrimSpace(payload.Description) != "" {

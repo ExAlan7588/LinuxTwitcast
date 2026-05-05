@@ -1,18 +1,14 @@
 package service
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/jzhang046/croned-twitcasting-recorder/record"
 	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
 )
-
-const recordingDateLayout = "2006-01-02"
 
 var lookupMovieArchiveMetadata = twitcasting.LookupMovieArchiveMetadata
 
@@ -79,22 +75,9 @@ func archiveSessionRecordingPath(session record.SessionInfo, currentPath string)
 		ext = ".ts"
 	}
 
-	name := firstNonEmpty(session.StreamerName, session.Streamer)
-	title := strings.TrimSpace(session.Title)
-	if name == "" || title == "" {
-		return ""
-	}
-
-	fileName := fmt.Sprintf("[%s][%s]%s%s", name, sessionRecordingDate(session), title, ext)
+	fileName := record.FormattedMediaName(session) + ext
 	if dir == "." || dir == "" {
 		return fileName
 	}
 	return filepath.Join(dir, fileName)
-}
-
-func sessionRecordingDate(session record.SessionInfo) string {
-	if session.StartedAt.IsZero() {
-		return time.Now().Format(recordingDateLayout)
-	}
-	return session.StartedAt.Local().Format(recordingDateLayout)
 }

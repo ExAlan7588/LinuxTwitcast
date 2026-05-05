@@ -166,10 +166,6 @@ type StreamerProfile struct {
 	PasswordRequired bool
 }
 
-func GetWSStreamUrl(streamer string) (record.StreamLookupResult, error) {
-	return GetWSStreamUrlWithPassword(streamer, "")
-}
-
 // 新增直播主时只需要确认主页存在并能取到基础资料，不要求对方当前正在直播。
 func LookupStreamerProfile(streamer string) (StreamerProfile, error) {
 	screenID := strings.TrimSpace(streamer)
@@ -177,7 +173,7 @@ func LookupStreamerProfile(streamer string) (StreamerProfile, error) {
 		return StreamerProfile{}, errors.New("screen-id is required")
 	}
 
-	pageInfo, statusCode, err := fetchStreamInfoWithStatus(screenID)
+	pageInfo, statusCode, err := fetchStreamInfoWithStatus(screenID, true)
 	if err != nil {
 		return StreamerProfile{}, err
 	}
@@ -198,8 +194,10 @@ func LookupStreamerProfile(streamer string) (StreamerProfile, error) {
 }
 
 func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupResult, error) {
-	pageInfo := fetchStreamInfo(streamer)
-	effectiveInfo := pageInfo
+	effectiveInfo := streamPageInfo{streamerName: streamer}
+	if pageInfo, _, err := fetchStreamInfoWithStatus(streamer, true); err == nil {
+		effectiveInfo = pageInfo
+	}
 
 	u, _ := url.Parse(apiEndpoint)
 	q := u.Query()
@@ -229,15 +227,16 @@ func GetWSStreamUrlWithPassword(streamer, password string) (record.StreamLookupR
 		result := buildLookupResultFromPageInfo(effectiveInfo)
 		return result, err
 	}
-	if movieID, err := extractMovieID(jq); err == nil {
-		if movieInfo, movieErr := fetchMovieInfo(streamer, movieID); movieErr == nil {
+	movieID, movieErr := extractMovieID(jq)
+	if movieErr == nil {
+		if movieInfo, movieErr := fetchMoviePageInfo(streamer, movieID, true, parseStreamPageInfo); movieErr == nil {
 			effectiveInfo = mergePageInfo(effectiveInfo, movieInfo)
 		} else {
 			log.Printf("Failed fetching movie page info for streamer [%s] movie [%s]: %v\n", streamer, movieID, movieErr)
 		}
 	}
 	result := buildLookupResultFromPageInfo(effectiveInfo)
-	if movieID, err := extractMovieID(jq); err == nil {
+	if movieErr == nil {
 		result.MovieID = strings.TrimSpace(movieID)
 	}
 	if detectMembersOnlyMovieFallback(effectiveInfo, result.MovieID) {
@@ -364,23 +363,7 @@ func sanitizeFilename(name string) string {
 	return filenameSanitizer.Replace(name)
 }
 
-func fetchStreamInfo(streamer string) streamPageInfo {
-	info, _, err := fetchStreamInfoWithStatus(streamer)
-	if err != nil {
-		return streamPageInfo{streamerName: streamer}
-	}
-	return info
-}
-
-func fetchStreamInfoWithStatus(streamer string) (streamPageInfo, int, error) {
-	return fetchStreamInfoWithStatusUsingAuth(streamer, true)
-}
-
-func fetchStreamInfoWithStatusWithoutAuth(streamer string) (streamPageInfo, int, error) {
-	return fetchStreamInfoWithStatusUsingAuth(streamer, false)
-}
-
-func fetchStreamInfoWithStatusUsingAuth(streamer string, includeAuth bool) (streamPageInfo, int, error) {
+func fetchStreamInfoWithStatus(streamer string, includeAuth bool) (streamPageInfo, int, error) {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprint(baseDomain, "/", streamer), nil)
 	if err != nil {
 		return streamPageInfo{streamerName: streamer}, 0, err
@@ -597,7 +580,7 @@ func detectMembershipOnlyWithAuthAccess(streamer string) bool {
 		return false
 	}
 
-	info, statusCode, err := fetchStreamInfoWithStatusWithoutAuth(streamer)
+	info, statusCode, err := fetchStreamInfoWithStatus(streamer, false)
 	if err != nil || statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
 		return false
 	}

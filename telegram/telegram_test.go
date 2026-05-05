@@ -85,6 +85,35 @@ func TestTaggedM4APathUsesArtistDateAndTitle(t *testing.T) {
 	}
 }
 
+func TestTelegramCaptionUsesUnifiedMediaFormat(t *testing.T) {
+	session := record.SessionInfo{
+		Streamer:     "iuuic1",
+		StreamerName: "ちの",
+		Title:        "お話しよー♥ ／ JKにカメラ強要するヤバい男の話",
+		StartedAt:    time.Date(2026, 5, 4, 23, 30, 0, 0, time.FixedZone("UTC+8", 8*60*60)),
+	}
+
+	got := record.FormattedMediaName(session)
+	want := "[ちの][2026-05-04]お話しよー♥ ／ JKにカメラ強要するヤバい男の話"
+	if got != want {
+		t.Fatalf("FormattedMediaName() = %q, want %q", got, want)
+	}
+}
+
+func TestFormattedMediaNameFallsBackToScreenID(t *testing.T) {
+	session := record.SessionInfo{
+		Streamer:  "iuuic1",
+		Title:     "注意喚起",
+		StartedAt: time.Date(2026, 5, 4, 23, 30, 0, 0, time.FixedZone("UTC+8", 8*60*60)),
+	}
+
+	got := record.FormattedMediaName(session)
+	want := "[iuuic1][2026-05-04]注意喚起"
+	if got != want {
+		t.Fatalf("FormattedMediaName() = %q, want %q", got, want)
+	}
+}
+
 func TestBuildM4AArgsIncludesMetadataAndCover(t *testing.T) {
 	session := record.SessionInfo{
 		Filename:     `C:\recordings\source.ts`,
@@ -259,7 +288,7 @@ func TestConvertManagedMediaFileUsesProvidedAvatarSession(t *testing.T) {
 	}
 }
 
-func TestUploadFileWithResultReturnsMessageURL(t *testing.T) {
+func TestUploadAudioReturnsMessageURL(t *testing.T) {
 	tempDir := t.TempDir()
 	audioFile := filepath.Join(tempDir, "recording.m4a")
 	if err := os.WriteFile(audioFile, []byte("dummy"), 0600); err != nil {
@@ -275,13 +304,13 @@ func TestUploadFileWithResultReturnsMessageURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := UploadFileWithResult(Config{
+	result, err := uploadFile(Config{
 		BotToken:    "bot-token",
 		ChatID:      "-1001234567890",
 		ApiEndpoint: server.URL,
-	}, audioFile, "caption")
+	}, audioFile, "caption", UploadMethodAudio)
 	if err != nil {
-		t.Fatalf("UploadFileWithResult returned error: %v", err)
+		t.Fatalf("uploadFile returned error: %v", err)
 	}
 
 	if result.Method != UploadMethodAudio {

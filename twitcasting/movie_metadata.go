@@ -18,10 +18,6 @@ type MovieArchiveMetadata struct {
 	MemberOnly   bool
 }
 
-func fetchMovieInfo(streamer, movieID string) (streamPageInfo, error) {
-	return fetchMovieInfoWithAuth(streamer, movieID, true)
-}
-
 func LookupMovieArchiveMetadata(streamer, movieID string) (MovieArchiveMetadata, error) {
 	info, err := fetchMoviePageInfo(streamer, movieID, true, parseMoviePageInfo)
 	if err != nil {
@@ -37,10 +33,6 @@ func LookupMovieArchiveMetadata(streamer, movieID string) (MovieArchiveMetadata,
 		CoverURL:     info.coverURL,
 		MemberOnly:   info.memberOnly,
 	}, nil
-}
-
-func fetchMovieInfoWithAuth(streamer, movieID string, includeAuth bool) (streamPageInfo, error) {
-	return fetchMoviePageInfo(streamer, movieID, includeAuth, parseStreamPageInfo)
 }
 
 func fetchMoviePageInfo(

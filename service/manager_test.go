@@ -79,14 +79,20 @@ func TestMemberOnlyTransitionDismissesWhenLookupSucceeds(t *testing.T) {
 }
 
 func TestMemberOnlyTransitionArchivesOnlyWhenOffline(t *testing.T) {
-	if shouldArchiveMemberOnlyEnd(nil) {
-		t.Fatal("expected successful lookup to avoid archive notification")
+	manager := NewManager()
+	manager.memberOnly["member-user"] = memberOnlyNotification{
+		session: record.SessionInfo{Streamer: "member-user"},
 	}
-	if shouldArchiveMemberOnlyEnd(twitcasting.ErrPasswordRequired) {
-		t.Fatal("expected password state to avoid member-only archive notification")
-	}
-	if !shouldArchiveMemberOnlyEnd(twitcasting.ErrStreamOffline) {
+
+	manager.mu.Lock()
+	end, dismiss := manager.takeMemberOnlyTransitionLocked("member-user", twitcasting.ErrStreamOffline)
+	manager.mu.Unlock()
+
+	if end == nil {
 		t.Fatal("expected offline lookup to archive member-only ended notification")
+	}
+	if dismiss != nil {
+		t.Fatal("expected offline lookup to skip dismissal notification")
 	}
 }
 
@@ -151,6 +157,21 @@ func TestRefreshSessionFromArchiveMetadataRenamesRecording(t *testing.T) {
 	}
 	if _, err := os.Stat(sourcePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected source file to be renamed, stat err = %v", err)
+	}
+}
+
+func TestArchiveSessionRecordingPathUsesUnifiedFormat(t *testing.T) {
+	session := record.SessionInfo{
+		Streamer:     "iuuic1",
+		StreamerName: "ちの",
+		Title:        "お話しよー♥ ／ JKにカメラ強要するヤバい男の話",
+		StartedAt:    time.Date(2026, 5, 4, 23, 30, 0, 0, time.FixedZone("UTC+8", 8*60*60)),
+	}
+
+	got := archiveSessionRecordingPath(session, "Recordings/ちの/source.ts")
+	want := filepath.Join("Recordings/ちの", "[ちの][2026-05-04]お話しよー♥ ／ JKにカメラ強要するヤバい男の話.ts")
+	if got != want {
+		t.Fatalf("archiveSessionRecordingPath() = %q, want %q", got, want)
 	}
 }
 

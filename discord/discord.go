@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jzhang046/croned-twitcasting-recorder/record"
+	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
 )
 
 var discordAPI = "https://discord.com/api/v10"
@@ -37,6 +38,8 @@ var discordTitleSanitizer = strings.NewReplacer(
 	"%", "％",
 	"$", "＄",
 )
+
+var lookupStreamerProfile = twitcasting.LookupStreamerProfile
 
 // Notifier handles Discord notifications for a single recording session.
 type Notifier struct {
@@ -165,8 +168,8 @@ type rolePayload struct {
 
 // ── Embed builders ───────────────────────────────────────────────────────────
 
-func buildStartEmbed(session record.SessionInfo, elapsed time.Duration) embed {
-	return buildStartEmbedWithTexts(session, elapsed, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
+func defaultDiscordTexts() discordTextCatalog {
+	return textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage())
 }
 
 func buildStartEmbedWithTexts(session record.SessionInfo, elapsed time.Duration, texts discordTextCatalog) embed {
@@ -190,8 +193,21 @@ func buildStartEmbedWithTexts(session record.SessionInfo, elapsed time.Duration,
 	}
 }
 
-func buildEndEmbed(session record.SessionInfo, elapsed time.Duration, telegramURL string) embed {
-	return buildEndEmbedWithTexts(session, elapsed, telegramURL, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
+func refreshSessionTitle(session record.SessionInfo) record.SessionInfo {
+	profile, err := lookupStreamerProfile(session.Streamer)
+	if err != nil || strings.TrimSpace(profile.Title) == "" {
+		return session
+	}
+
+	refreshed := session
+	refreshed.Title = profile.Title
+	if strings.TrimSpace(profile.StreamerName) != "" {
+		refreshed.StreamerName = profile.StreamerName
+	}
+	if strings.TrimSpace(profile.AvatarURL) != "" {
+		refreshed.AvatarURL = profile.AvatarURL
+	}
+	return refreshed
 }
 
 func buildEndEmbedWithTexts(session record.SessionInfo, elapsed time.Duration, telegramURL string, texts discordTextCatalog) embed {
@@ -216,8 +232,12 @@ func buildEndEmbedWithTexts(session record.SessionInfo, elapsed time.Duration, t
 	}
 }
 
-func buildMemberOnlyStartEmbed(session record.SessionInfo) embed {
-	return buildMemberOnlyStartEmbedWithTexts(session, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
+func updateLiveSessionFromProfile(session record.SessionInfo) record.SessionInfo {
+	refreshed := refreshSessionTitle(session)
+	if strings.TrimSpace(refreshed.Title) == "" {
+		return session
+	}
+	return refreshed
 }
 
 func buildMemberOnlyStartEmbedWithTexts(session record.SessionInfo, texts discordTextCatalog) embed {
@@ -238,10 +258,6 @@ func buildMemberOnlyStartEmbedWithTexts(session record.SessionInfo, texts discor
 		Footer:    &footer{Text: texts.footerText, IconUrl: twitcastIcon},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
-}
-
-func buildMemberOnlyEndEmbed(session record.SessionInfo) embed {
-	return buildMemberOnlyEndEmbedWithTexts(session, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
 }
 
 func buildMemberOnlyEndEmbedWithTexts(session record.SessionInfo, texts discordTextCatalog) embed {
@@ -464,7 +480,8 @@ func (n *Notifier) NotifyMemberOnlyStart(session record.SessionInfo) {
 	defer n.mu.Unlock()
 
 	mention := n.roleMentionContent()
-	e := buildMemberOnlyStartEmbed(session)
+	texts := defaultDiscordTexts()
+	e := buildMemberOnlyStartEmbedWithTexts(session, texts)
 	msgID, err := n.sendMessageToChannel(n.notifyChannelID, mention, e)
 	if err != nil {
 		log.Printf("[Discord] Failed to send members-only start notification: %v\n", err)
@@ -484,7 +501,8 @@ func (n *Notifier) NotifyMemberOnlyEnd(session record.SessionInfo) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	endEmbed := buildMemberOnlyEndEmbed(session)
+	texts := defaultDiscordTexts()
+	endEmbed := buildMemberOnlyEndEmbedWithTexts(session, texts)
 	originalMsgID := n.messageID
 
 	if n.archiveChannelID != "" {
@@ -538,8 +556,9 @@ func (n *Notifier) NotifyStart(session record.SessionInfo) {
 
 	n.startTime = time.Now()
 	mention := n.roleMentionContent()
+	texts := defaultDiscordTexts()
 
-	e := buildStartEmbed(session, 0)
+	e := buildStartEmbedWithTexts(session, 0, texts)
 	msgID, err := n.sendMessageToChannel(n.notifyChannelID, mention, e)
 	if err != nil {
 		log.Printf("[Discord] Failed to send start notification: %v\n", err)
@@ -559,12 +578,14 @@ func (n *Notifier) NotifyStart(session record.SessionInfo) {
 				n.mu.Lock()
 				elapsed := time.Since(n.startTime)
 				mID := n.messageID
+				currentSession := session
 				n.mu.Unlock()
 
 				if mID == "" {
 					return
 				}
-				updated := buildStartEmbed(session, elapsed)
+				currentSession = updateLiveSessionFromProfile(currentSession)
+				updated := buildStartEmbedWithTexts(currentSession, elapsed, texts)
 				if err := n.editMessage(n.notifyChannelID, mID, updated); err != nil {
 					log.Printf("[Discord] Failed to update duration: %v\n", err)
 				}
@@ -591,7 +612,7 @@ func (n *Notifier) NotifyEnd(session record.SessionInfo) {
 	defer n.mu.Unlock()
 
 	elapsed := time.Since(n.startTime)
-	endEmbed := buildEndEmbed(session, elapsed, "")
+	endEmbed := buildEndEmbedWithTexts(session, elapsed, "", defaultDiscordTexts())
 	originalMsgID := n.messageID
 	sessionKey := archiveSessionKey(session)
 
@@ -636,7 +657,7 @@ func (n *Notifier) UpdateArchiveWithTelegramLink(session record.SessionInfo, tel
 	}
 
 	updated := state.embed
-	updated.Fields = withTelegramArchiveField(updated.Fields, telegramURL, textsForLanguage(runtimeDiscordConfig(Config{}).EffectiveLanguage()))
+	updated.Fields = withTelegramArchiveField(updated.Fields, telegramURL, defaultDiscordTexts())
 	if err := n.editMessage(state.channelID, state.messageID, updated); err != nil {
 		return err
 	}
