@@ -768,6 +768,90 @@ func TestHandleManualRecordQueuesSingleRecording(t *testing.T) {
 	}
 }
 
+func TestHandleFileConvertM4ADoesNotMatchLegacyRecordingPrefix(t *testing.T) {
+	rootDir := t.TempDir()
+	chdirTestRoot(t, rootDir)
+
+	recordingsRoot := filepath.Join(rootDir, "Recordings")
+	targetDir := filepath.Join(recordingsRoot, "mielu")
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	tempFile := filepath.Join(targetDir, "sample.ts")
+	if err := os.WriteFile(tempFile, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+	if err := config.Save(filepath.Join(rootDir, "config.json"), &config.AppConfig{
+		Lang: "ZH",
+		Streamers: []*config.StreamerConfig{
+			{
+				ScreenId: "mielu_ii",
+				Schedule: "@every 5s",
+				Folder:   "Recording/mielu",
+				Enabled:  true,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	originalLookup := lookupStreamerProfile
+	lookupStreamerProfile = func(screenID string) (twitcasting.StreamerProfile, error) {
+		if screenID != "mielu" {
+			t.Fatalf("screenID = %q, want %q", screenID, "mielu")
+		}
+		return twitcasting.StreamerProfile{
+			ScreenID:     "mielu",
+			StreamerName: "Fallback Channel",
+			AvatarURL:    "https://example.test/fallback.jpg",
+		}, nil
+	}
+	t.Cleanup(func() {
+		lookupStreamerProfile = originalLookup
+	})
+
+	originalConvertManagedMediaFile := convertManagedMediaFile
+	convertManagedMediaFile = func(session record.SessionInfo, filePath string) (string, error) {
+		if filePath != tempFile {
+			t.Fatalf("unexpected conversion path: %s", filePath)
+		}
+		if session.Streamer != "mielu" {
+			t.Fatalf("session.Streamer = %q, want %q", session.Streamer, "mielu")
+		}
+		if session.StreamerName != "Fallback Channel" {
+			t.Fatalf("session.StreamerName = %q", session.StreamerName)
+		}
+		if session.AvatarURL != "https://example.test/fallback.jpg" {
+			t.Fatalf("session.AvatarURL = %q", session.AvatarURL)
+		}
+		return filepath.Join(targetDir, "sample.m4a"), nil
+	}
+	t.Cleanup(func() {
+		convertManagedMediaFile = originalConvertManagedMediaFile
+	})
+
+	server := NewServer(Options{
+		Address: "127.0.0.1:8080",
+		RootDir: rootDir,
+	}, service.NewManager(), nil)
+
+	body, err := json.Marshal(map[string]string{
+		"root":  recordingsRoot,
+		"path": "mielu/sample.ts",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/files/convert-m4a", bytes.NewBuffer(body))
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func chdirTestRoot(t *testing.T, rootDir string) {
 	t.Helper()
 

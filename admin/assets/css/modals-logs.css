@@ -1,0 +1,189 @@
+.console {
+    min-height: 300px;
+    max-height: 520px;
+    margin: 0 16px 16px;
+    border: 1px solid color-mix(in srgb, var(--app-primary) 18%, #000);
+    border-radius: 8px;
+    background: var(--app-console-bg);
+    color: var(--app-console-fg);
+    padding: 14px;
+    font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    overflow: auto;
+    white-space: pre-wrap;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 18px 44px rgba(0, 0, 0, 0.18);
+}
+
+.logs-summary {
+    min-height: 18px;
+    margin-top: 4px;
+    font-size: 12px;
+}
+
+.log-alerts-section {
+    display: grid;
+    gap: 8px;
+    margin: 0 16px 12px;
+    border-top: 1px solid var(--app-border);
+    padding-top: 12px;
+}
+
+.log-alert-item {
+    border: 1px solid color-mix(in srgb, var(--app-danger) 42%, var(--app-border));
+    border-radius: 8px;
+    background: var(--app-danger-soft);
+    padding: 8px 10px;
+    color: var(--app-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.modal-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+}
+
+.modal-shell[hidden] {
+    display: none;
+}
+
+.app-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: var(--app-modal-backdrop);
+}
+
+.modal-card {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 14px;
+    width: min(760px, calc(100vw - 32px));
+    max-height: min(86vh, 840px);
+    overflow: auto;
+    border: 1px solid var(--app-border-strong);
+    border-radius: 10px;
+    background: var(--app-surface);
+    box-shadow: var(--app-shadow-strong);
+    padding: 18px;
+}
+
+.modal-card-guide {
+    width: min(680px, calc(100vw - 32px));
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 0;
+    border-bottom: 1px solid var(--app-border);
+    padding: 0 0 12px;
+}
+
+.modal-stack,
+.guide-list {
+    display: grid;
+    gap: 12px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    border-top: 1px solid var(--app-border);
+    padding-top: 12px;
+}
+
+.modal-section {
+    display: grid;
+    gap: 10px;
+    border-top: 1px solid var(--app-border);
+    padding-top: 14px;
+}
+
+.helper-note {
+    margin-bottom: 0;
+}
+
+.helper-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.validation-status.is-success {
+    color: var(--app-success);
+}
+
+.validation-status.is-warn {
+    color: var(--app-warning);
+}
+
+.validation-status.is-error {
+    color: var(--app-danger);
+}
+
+body.modal-open {
+    overflow-y: auto;
+}
+
+.toast-message {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 1100;
+    max-width: min(460px, calc(100vw - 40px));
+    border: 1px solid color-mix(in srgb, var(--app-primary) 24%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--app-surface-raised) 86%, #000);
+    color: #fff;
+    padding: 12px 14px;
+    box-shadow: var(--app-shadow-strong);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
+    transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.toast-message.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.toast-message.error {
+    border-color: color-mix(in srgb, var(--app-danger) 42%, transparent);
+    background: var(--app-danger);
+}
+
+.toast-message a {
+    color: #fff;
+    font-weight: 800;
+}
+
+@media (max-width: 720px) {
+    .modal-shell {
+        align-items: end;
+        padding: 12px;
+    }
+
+    .modal-card {
+        width: 100%;
+        max-height: 92vh;
+        border-radius: 10px 10px 0 0;
+    }
+
+    .modal-header,
+    .modal-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

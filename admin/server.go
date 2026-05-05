@@ -28,7 +28,7 @@ import (
 	"github.com/jzhang046/croned-twitcasting-recorder/twitcasting"
 )
 
-//go:embed assets/*
+//go:embed assets assets/css assets/js assets/vendor/bootstrap/css assets/vendor/bootstrap/js assets/vendor/bootstrap-icons/font assets/vendor/bootstrap-icons/font/fonts
 var assets embed.FS
 
 var lookupStreamerProfile = twitcasting.LookupStreamerProfile
@@ -918,9 +918,7 @@ func normalizeManagedFolderPrefix(folder string) string {
 	switch {
 	case strings.HasPrefix(normalized, "Recordings/"):
 		return strings.TrimPrefix(normalized, "Recordings/")
-	case strings.HasPrefix(normalized, "Recording/"):
-		return strings.TrimPrefix(normalized, "Recording/")
-	case strings.EqualFold(normalized, "Recordings"), strings.EqualFold(normalized, "Recording"):
+	case strings.EqualFold(normalized, "Recordings"):
 		return ""
 	default:
 		return normalized

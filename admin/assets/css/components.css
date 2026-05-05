@@ -1,0 +1,228 @@
+.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    background: var(--app-surface);
+    color: var(--app-muted);
+    transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.icon-button:hover {
+    border-color: var(--app-border-strong);
+    background: var(--app-surface-soft);
+    color: var(--app-text);
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.action-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: var(--app-shadow);
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.metric {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    min-height: 96px;
+    padding: 16px;
+    border: 1px solid color-mix(in srgb, var(--app-border) 92%, transparent);
+    border-radius: 8px;
+    background: var(--app-surface);
+    box-shadow: var(--app-shadow);
+}
+
+.metric::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--app-primary);
+    content: "";
+}
+
+.metric-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: var(--app-primary-soft);
+    color: var(--app-primary);
+    font-size: 24px;
+}
+
+.metric:nth-child(2)::before {
+    background: var(--app-success);
+}
+
+.metric:nth-child(2) .metric-icon {
+    background: var(--app-success-soft);
+    color: var(--app-success);
+}
+
+.metric:nth-child(3)::before,
+.metric:nth-child(5)::before {
+    background: var(--app-purple);
+}
+
+.metric:nth-child(3) .metric-icon,
+.metric:nth-child(5) .metric-icon {
+    background: var(--app-purple-soft);
+    color: var(--app-purple);
+}
+
+.metric:nth-child(4)::before {
+    background: var(--app-danger);
+}
+
+.metric:nth-child(4) .metric-icon {
+    background: var(--app-danger-soft);
+    color: var(--app-danger);
+}
+
+.metric span,
+.metric small {
+    display: block;
+    color: var(--app-muted);
+    font-size: 12px;
+}
+
+.metric strong {
+    display: block;
+    margin-top: 2px;
+    color: var(--app-text);
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1.1;
+    word-break: break-word;
+}
+
+.metric small {
+    margin-top: 3px;
+}
+
+.metric-wide {
+    grid-column: 1 / -1;
+    min-height: auto;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 800;
+    border: 1px solid transparent;
+}
+
+.badge.running {
+    border-color: color-mix(in srgb, var(--app-success) 28%, transparent);
+    background: var(--app-success-soft);
+    color: var(--app-success);
+}
+
+.badge.stopping {
+    border-color: color-mix(in srgb, var(--app-warning) 30%, transparent);
+    background: var(--app-warning-soft);
+    color: var(--app-warning);
+}
+
+.badge.stopped,
+.badge.muted {
+    border-color: var(--app-border);
+    background: var(--app-surface-soft);
+    color: var(--app-muted);
+}
+
+.record-item,
+.diagnostic,
+.guide-item {
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    background: var(--app-surface-soft);
+    padding: 10px 12px;
+}
+
+.record-item,
+.diagnostic {
+    box-shadow: 0 1px 0 color-mix(in srgb, #fff 16%, transparent) inset;
+}
+
+.record-item {
+    display: grid;
+    gap: 4px;
+}
+
+.download-progress-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--app-muted);
+    font-size: 12px;
+}
+
+.download-progress-track {
+    overflow: hidden;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--app-border);
+}
+
+.download-progress-bar {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--app-primary);
+}
+
+.diagnostic.warn {
+    border-color: color-mix(in srgb, var(--app-warning) 42%, var(--app-border));
+    background: color-mix(in srgb, var(--app-warning-soft) 66%, var(--app-surface-soft));
+}
+
+.diagnostic.error {
+    border-color: color-mix(in srgb, var(--app-danger) 46%, var(--app-border));
+    background: color-mix(in srgb, var(--app-danger-soft) 66%, var(--app-surface-soft));
+}
+
+html[data-theme="dark"] .metric {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--app-surface-raised) 94%, #fff), var(--app-surface));
+}
+
+html[data-theme="dark"] .metric-icon {
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent) inset;
+}
+
+@media (max-width: 1180px) {
+    .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 620px) {
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+}
