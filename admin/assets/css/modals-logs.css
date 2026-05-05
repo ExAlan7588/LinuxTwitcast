@@ -39,6 +39,89 @@
     word-break: break-word;
 }
 
+.diagnostic-drawer {
+    --bs-offcanvas-width: min(430px, calc(100vw - 24px));
+    border-left: 1px solid var(--app-border-strong);
+    background: var(--app-surface);
+    color: var(--app-text);
+    box-shadow: var(--app-shadow-strong);
+}
+
+.diagnostic-drawer .offcanvas-header {
+    align-items: flex-start;
+    border-bottom: 1px solid var(--app-border);
+    padding: 18px;
+}
+
+.diagnostic-drawer .offcanvas-title {
+    color: var(--app-text);
+    font-size: 18px;
+    font-weight: 800;
+}
+
+.diagnostic-drawer .offcanvas-body {
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    padding: 18px;
+}
+
+.drawer-section {
+    display: grid;
+    gap: 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    background: var(--app-surface-soft);
+    padding: 14px;
+}
+
+.drawer-section h3 {
+    color: var(--app-text);
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.drawer-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.runtime-list {
+    display: grid;
+    grid-template-columns: minmax(112px, auto) minmax(0, 1fr);
+    gap: 8px 12px;
+    margin: 0;
+}
+
+.runtime-list dt {
+    color: var(--app-muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.runtime-list dd {
+    min-width: 0;
+    color: var(--app-text);
+    font-size: 12px;
+    font-weight: 700;
+    text-align: right;
+    word-break: break-word;
+}
+
+.offcanvas-backdrop {
+    background-color: #020617;
+}
+
+.offcanvas-backdrop.show {
+    opacity: var(--app-drawer-backdrop-opacity);
+}
+
+html[data-theme="dark"] .diagnostic-drawer {
+    background: linear-gradient(180deg, var(--app-surface-raised), var(--app-surface));
+}
+
 .modal-shell {
     position: fixed;
     inset: 0;

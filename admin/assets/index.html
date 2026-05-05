@@ -46,6 +46,10 @@
                         <i class="bi bi-arrow-clockwise"></i>
                         <span data-i18n="actions.refresh">Refresh</span>
                     </button>
+                    <button class="btn btn-outline-secondary btn-sm action-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#diagnosticsDrawer" aria-controls="diagnosticsDrawer">
+                        <i class="bi bi-info-circle"></i>
+                        <span data-i18n="system.diagnostics">Diagnostics</span>
+                    </button>
                     <button id="saveSettingsBtn" class="btn btn-primary btn-sm action-btn" type="button">
                         <i class="bi bi-floppy"></i>
                         <span data-i18n="actions.save">Save Settings</span>
@@ -292,23 +296,6 @@
                     </article>
                 </div>
 
-                <article class="panel">
-                    <div class="panel-head">
-                        <div>
-                            <h2 data-i18n="system.section">System Info</h2>
-                            <dl id="runtimeInfo" class="runtime-list"></dl>
-                        </div>
-                        <button id="checkVersionBtn" class="btn btn-outline-secondary btn-sm" type="button">
-                            <i class="bi bi-shield-check"></i>
-                            <span data-button-label data-i18n="system.checkUpdates">Check for Updates</span>
-                        </button>
-                    </div>
-                    <div class="diagnostic-box">
-                        <h3 data-i18n="system.diagnostics">Diagnostics</h3>
-                        <div id="diagnostics" class="stack muted-text">Diagnostics have not been loaded yet.</div>
-                    </div>
-                </article>
-
                 <article class="panel panel-logs">
                     <div class="panel-head">
                         <div>
@@ -339,6 +326,32 @@
             </div>
         </section>
     </main>
+
+    <aside id="diagnosticsDrawer" class="offcanvas offcanvas-end diagnostic-drawer" tabindex="-1" aria-labelledby="diagnosticsDrawerTitle" data-bs-scroll="true">
+        <div class="offcanvas-header">
+            <div>
+                <h2 id="diagnosticsDrawerTitle" class="offcanvas-title" data-i18n="system.section">System Info</h2>
+                <p class="panel-note" data-i18n="system.diagnostics">Diagnostics</p>
+            </div>
+            <button class="btn-close" type="button" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+            <section class="drawer-section">
+                <div class="drawer-section-head">
+                    <h3 data-i18n="system.runtime">Runtime</h3>
+                    <button id="checkVersionBtn" class="btn btn-outline-secondary btn-sm" type="button">
+                        <i class="bi bi-shield-check"></i>
+                        <span data-button-label data-i18n="system.checkUpdates">Check for Updates</span>
+                    </button>
+                </div>
+                <dl id="runtimeInfo" class="runtime-list"></dl>
+            </section>
+            <section class="drawer-section">
+                <h3 data-i18n="system.diagnostics">Diagnostics</h3>
+                <div id="diagnostics" class="stack muted-text">Diagnostics have not been loaded yet.</div>
+            </section>
+        </div>
+    </aside>
 
     <div id="streamerModal" class="modal-shell" hidden>
         <div id="streamerModalBackdrop" class="app-modal-backdrop"></div>
