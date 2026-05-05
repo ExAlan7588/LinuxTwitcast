@@ -62,8 +62,7 @@ func NewFileSink(recordCtx record.RecordContext) (record.Sink, error) {
 		}
 	}
 
-	// If the file doesn't exist, create it, or append to the file
-	f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0664)
+	filename, f, err := openRecordingFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -89,4 +88,27 @@ func NewFileSink(recordCtx record.RecordContext) (record.Sink, error) {
 	}()
 
 	return sink, nil
+}
+
+func openRecordingFile(filename string) (string, *os.File, error) {
+	for index := 1; ; index++ {
+		candidate := recordingFilenameWithSuffix(filename, index)
+		f, err := os.OpenFile(candidate, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0664)
+		if err == nil {
+			return candidate, f, nil
+		}
+		if !os.IsExist(err) {
+			return "", nil, err
+		}
+	}
+}
+
+func recordingFilenameWithSuffix(filename string, index int) string {
+	if index <= 1 {
+		return filename
+	}
+
+	ext := filepath.Ext(filename)
+	base := strings.TrimSuffix(filename, ext)
+	return fmt.Sprintf("%s (%d)%s", base, index, ext)
 }

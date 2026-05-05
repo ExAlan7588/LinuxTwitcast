@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -54,11 +55,16 @@ func renameSessionRecordingFile(original, refreshed record.SessionInfo) record.S
 		return refreshed
 	}
 
-	target := archiveSessionRecordingPath(refreshed, original.Filename)
+	target, err := archiveSessionRecordingPath(refreshed, original.Filename)
+	if err != nil {
+		log.Printf("[Metadata] Failed building archive target for %s: %v\n", original.Filename, err)
+		return refreshed
+	}
 	if target == "" || target == original.Filename {
 		return refreshed
 	}
-	if err := os.Rename(original.Filename, target); err != nil {
+
+	if err := moveFileWithoutOverwrite(original.Filename, target); err != nil {
 		log.Printf("[Metadata] Failed renaming recording file %s to %s: %v\n", original.Filename, target, err)
 		return refreshed
 	}
@@ -68,7 +74,7 @@ func renameSessionRecordingFile(original, refreshed record.SessionInfo) record.S
 	return refreshed
 }
 
-func archiveSessionRecordingPath(session record.SessionInfo, currentPath string) string {
+func archiveSessionRecordingPath(session record.SessionInfo, currentPath string) (string, error) {
 	dir := filepath.Dir(currentPath)
 	ext := filepath.Ext(currentPath)
 	if ext == "" {
@@ -76,8 +82,40 @@ func archiveSessionRecordingPath(session record.SessionInfo, currentPath string)
 	}
 
 	fileName := record.FormattedMediaName(session) + ext
-	if dir == "." || dir == "" {
-		return fileName
+	target := filepath.Join(dir, fileName)
+	available, err := nextAvailablePath(target)
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(dir, fileName)
+	return available, nil
+}
+
+func nextAvailablePath(path string) (string, error) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return path, nil
+	} else if err != nil {
+		return "", err
+	}
+
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(path, ext)
+	for index := 2; ; index++ {
+		candidate := fmt.Sprintf("%s (%d)%s", base, index, ext)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate, nil
+		} else if err != nil {
+			return "", err
+		}
+	}
+}
+
+func moveFileWithoutOverwrite(sourcePath, targetPath string) error {
+	if err := os.Link(sourcePath, targetPath); err != nil {
+		return err
+	}
+	if err := os.Remove(sourcePath); err != nil {
+		_ = os.Remove(targetPath)
+		return err
+	}
+	return nil
 }

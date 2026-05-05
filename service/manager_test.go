@@ -168,10 +168,60 @@ func TestArchiveSessionRecordingPathUsesUnifiedFormat(t *testing.T) {
 		StartedAt:    time.Date(2026, 5, 4, 23, 30, 0, 0, time.FixedZone("UTC+8", 8*60*60)),
 	}
 
-	got := archiveSessionRecordingPath(session, "Recordings/ちの/source.ts")
+	got, err := archiveSessionRecordingPath(session, "Recordings/ちの/source.ts")
+	if err != nil {
+		t.Fatalf("archiveSessionRecordingPath() error = %v", err)
+	}
 	want := filepath.Join("Recordings/ちの", "[ちの][2026-05-04]お話しよー♥ ／ JKにカメラ強要するヤバい男の話.ts")
 	if got != want {
 		t.Fatalf("archiveSessionRecordingPath() = %q, want %q", got, want)
+	}
+}
+
+func TestRefreshSessionFromArchiveMetadataAvoidsOverwriteCollision(t *testing.T) {
+	originalLookup := lookupMovieArchiveMetadata
+	lookupMovieArchiveMetadata = func(streamer, movieID string) (twitcasting.MovieArchiveMetadata, error) {
+		return twitcasting.MovieArchiveMetadata{
+			StreamerName: "ミエル",
+			Title:        "同じタイトル",
+		}, nil
+	}
+	t.Cleanup(func() {
+		lookupMovieArchiveMetadata = originalLookup
+	})
+
+	recordingDir := t.TempDir()
+	sourcePath := filepath.Join(recordingDir, "[ミエル][2026-05-01]仮題.ts")
+	if err := os.WriteFile(sourcePath, []byte("ts data"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	conflictPath := filepath.Join(recordingDir, "[ミエル][2026-05-01]同じタイトル.ts")
+	if err := os.WriteFile(conflictPath, []byte("existing"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	session := record.SessionInfo{
+		Streamer:     "mielu_ii",
+		MovieID:      "834699167",
+		StreamerName: "ミエル",
+		Title:        "仮題",
+		Filename:     sourcePath,
+		StartedAt:    time.Date(2026, 5, 1, 22, 5, 21, 0, time.Local),
+	}
+
+	refreshed := refreshSessionFromArchiveMetadata(session)
+	wantPath := filepath.Join(recordingDir, "[ミエル][2026-05-01]同じタイトル (2).ts")
+	if refreshed.Filename != wantPath {
+		t.Fatalf("Filename = %q, want %q", refreshed.Filename, wantPath)
+	}
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("expected renamed file: %v", err)
+	}
+	if _, err := os.Stat(conflictPath); err != nil {
+		t.Fatalf("expected conflicting file to remain: %v", err)
+	}
+	if _, err := os.Stat(sourcePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected source file to be moved, stat err = %v", err)
 	}
 }
 
