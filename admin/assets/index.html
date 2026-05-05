@@ -297,19 +297,19 @@
                 </div>
 
                 <article class="panel panel-logs">
-                    <div class="panel-head">
-                        <div>
-                            <h2 data-i18n="logs.section">Live Logs</h2>
-                            <div id="logsSummary" class="logs-summary muted-text"></div>
-                        </div>
-                        <div class="inline-actions log-actions">
-                            <label class="form-check compact-toggle">
-                                <input id="hideOfflineLogsInput" class="form-check-input" type="checkbox" checked>
-                                <span class="form-check-label" data-i18n="logs.hideOffline">Hide offline polling</span>
+                        <div class="panel-head">
+                            <div>
+                                <h2 data-i18n="logs.section">Live Logs</h2>
+                                <div id="logsSummary" class="logs-summary muted-text"></div>
+                            </div>
+                            <div class="inline-actions log-actions">
+                            <label class="log-toggle">
+                                <input id="hideOfflineLogsInput" type="checkbox" checked>
+                                <span data-i18n="logs.hideOffline">Hide offline polling</span>
                             </label>
-                            <label class="form-check compact-toggle">
-                                <input id="errorsOnlyLogsInput" class="form-check-input" type="checkbox">
-                                <span class="form-check-label" data-i18n="logs.errorsOnly">Only show Error/Fatal</span>
+                            <label class="log-toggle">
+                                <input id="errorsOnlyLogsInput" type="checkbox">
+                                <span data-i18n="logs.errorsOnly">Only show Error/Fatal</span>
                             </label>
                             <button id="logsRefreshBtn" class="btn btn-outline-secondary btn-sm" type="button">
                                 <i class="bi bi-arrow-clockwise"></i>
